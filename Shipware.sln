@@ -1,0 +1,22 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 15
+VisualStudioVersion = 15.0.28307.757
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Shipware", "Shipware\Shipware.csproj", "{A1D0C643-F7E8-4090-BFC1-87D6B4591223}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{A1D0C643-F7E8-4090-BFC1-87D6B4591223}.Debug|x64.ActiveCfg = Debug|x64
+		{A1D0C643-F7E8-4090-BFC1-87D6B4591223}.Debug|x64.Build.0 = Debug|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {7A74E262-B481-4D50-91E2-45BE0BCB00D8}
+	EndGlobalSection
+EndGlobal
