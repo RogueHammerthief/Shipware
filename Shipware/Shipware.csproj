@@ -59,6 +59,7 @@
     <None Include="!Pre-Git Version Archive\ShipWare 20211222 %28.702%29.cs" />
     <None Include="!Pre-Git Version Archive\ShipWare 20240527 %28.8%29.cs" />
     <None Include="!Pre-Git Version Archive\ShipWare 20241014 %28.801%29.cs" />
+    <None Include="CodeJournal.cs" />
     <Compile Include="MDK\Bootstrapper.cs" />
     <AdditionalFiles Include="MDK\MDK.options.props">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
