@@ -38,6 +38,8 @@
   <Import Project="MDK/MDK.options.props" />
   <Import Project="MDK/MDK.paths.props" Condition="exists('MDK/MDK.paths.props')" />
   <ItemGroup>
+    <None Include="!Config Scraps\Barracuda 2.ini" />
+    <None Include="!Config Scraps\Barracuda.ini" />
     <None Include="!Pre-Git Pre-Fork Backups\Ship Manager 20201215.cs" />
     <None Include="!Pre-Git Pre-Fork Backups\Ship Manager 20201231.cs" />
     <None Include="!Pre-Git Pre-Fork Backups\Ship Manager 20210106.cs" />
