@@ -189,6 +189,8 @@ v 0.802
    >FurnitureSubTypes: Captain's Desk
    >IsolatedCockpitSubTypes: Bridge Helm
    >ShelfSubTypes: Fridge, First Aid cabinet
+ -Fixed a long-standing bug affecting the positioning of Report Elements on tall surfaces after the 
+  first row.
 
  -!TODO! TerminalValues (20240910). Possibly build into TerminalProperties as -values instead of 
   making a seperate command.

@@ -7259,6 +7259,11 @@ namespace IngameScript
                     if (rowCounter == columns)
                     {
                         sectorCenter.X = columnWidth / 2;
+                        //20250129: Apply the X portion of the viewport offset to correctly find the 
+                        //leftmost edge of the screen. The offset does not need to be applied to the 
+                        //Y value, because it's ultimately based off the initial positioning of the 
+                        //first row, which does receive the offset.
+                        sectorCenter.X += viewport.Position.X;
                         sectorCenter.Y += rowHeight;
                         rowCounter = 1;
                     }
