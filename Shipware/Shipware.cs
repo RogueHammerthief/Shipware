@@ -3989,10 +3989,50 @@ namespace IngameScript
                                             { report.font = iniValue.ToString(); }
                                             //Columns. IMPORTANT: Set anchors is no longer called during object
                                             //creation, and therefore MUST be called before the report is finished.
-                                            iniValue = _iniReadWrite.Get(sectionHeader, "Columns");
-                                            //Call setAnchors, using a default value of 1 if we didn't get 
-                                            //configuration data.
-                                            report.setAnchors(iniValue.ToInt32(1), _sb);
+                                            //iniValue = _iniReadWrite.Get(sectionHeader, "Columns");
+                                            //=======================>>><<<
+
+                                            Func<string, float> getPadding = (edge) =>
+                                            { return (float)(_iniReadWrite.Get(sectionHeader, $"Padding{edge}").ToDouble(0)); };
+                                            float padLeft = getPadding("Left");
+                                            float padRight = getPadding("Right");
+                                            float padTop = getPadding("Top");
+                                            float padBottom = getPadding("Bottom");
+                                            
+                                            //Possibly I should've just broken down and written a seperate method for this.
+                                            //Then I could just pass the values by reference and have the method handle 
+                                            //setting them to 0.
+                                            //But I can't overstate how much I hate having to pass half a dozen things into
+                                            //a method just to generate a proper warning message.
+                                            Func<string, float, string, float, bool> paddingExceeds100 = 
+                                                (firstEdgeName, firstEdgeValue, secondEdgeName, secondEdgeValue) =>
+                                            {
+                                                if (firstEdgeValue + secondEdgeValue > 100)
+                                                {
+                                                    textLog.addWarning($"Surface provider '{block.CustomName}', " +
+                                                            $"section {sectionHeader} has padding values in excess " +
+                                                            $"of 100% for edges {firstEdgeName} and {secondEdgeName} " +
+                                                            $"which have been ignored.");
+                                                    return true;
+                                                }
+                                                return false;
+                                            };
+                                            if (paddingExceeds100("Left", padLeft, "Right", padRight))
+                                            {
+                                                padLeft = 0;
+                                                padRight = 0;
+                                            }
+                                            if (paddingExceeds100("Top", padTop, "Bottom", padBottom))
+                                            {
+                                                padTop = 0;
+                                                padBottom = 0;
+                                            }
+
+                                            int columns = _iniReadWrite.Get(sectionHeader, "Columns").ToInt32(1);
+                                            bool titleObeysPadding = _iniReadWrite.Get(sectionHeader, "TitleObeysPadding").ToBoolean(false);
+                                            //Once we have all the data, we can call setAnchors.
+                                            report.setAnchors(columns, padLeft, padRight, padTop, padBottom,
+                                                titleObeysPadding, _sb);
 
                                             //We've should have all the available configuration for this report. Now we'll point
                                             //Reportable at it and move on.
@@ -4269,6 +4309,22 @@ namespace IngameScript
             }
             return blocks.Count;
         }
+        /*
+        private void checkPadding(string firstEdgeName, ref float firstEdgeValue, 
+            string secondEdgeName, ref float secondeEdgeValue) 
+        {
+            if (firstEdgeValue + secondeEdgeValue > 100)
+            {
+                //TODO: Monitor. I'm almost certain this won't affect
+                //the original values.
+                firstEdgeValue = 0;
+                secondeEdgeValue = 0;
+                textLog.addWarning($"Surface provider '{block.CustomName}', " +
+                        $"section {sectionHeader}'s padding values for " +
+                        $"{firstEdgeName} and {secondEdgeName} exceeded " +
+                        $"100% and have been ignored.");
+            }
+        }*/
 
         //Removes all declaration sections from the PB and returns what's left.
         //Assumes _iniReadWrite is loaded with a parse of the PB's config (Which will be ruined when 
@@ -7186,56 +7242,74 @@ namespace IngameScript
                 /*setAnchors(3);*/
             }
 
-            public void setAnchors(int columns, StringBuilder _sb)
+            public void setAnchors(int columns, float padLeft, float padRight, 
+                float padTop, float padBottom, bool titleObeysPadding, StringBuilder _sb)
             {
                 //Malware's code for determining the viewport offset, which is the difference 
-                //between an LCD's texture size and surface size. I have only the vaguest notions
-                //of how it works.
+                //between an LCD's texture size and surface size. 
+                //For quite a while I thought it was doing something magical, but no, it really is 
+                //just the upper-left corner and the height and width.
+                //Initially, it describes where the viewport (Our visible screen area) lies on the 
+                //texture (The square image that we actually draw things on, which is always larger
+                //or equal to the surface size). But adjusting the position and size of the viewport 
+                //is also how we'll apply padding values to this report.
                 RectangleF viewport = new RectangleF((surface.TextureSize - surface.SurfaceSize) / 2f,
                     surface.SurfaceSize);
-                //A string builder that we have to have before MeasureStringInPixels will tell us
-                //the dimensions of our element
+                
+                //To apply the left and top offsets, we need to adjust the anchor point and then trim the
+                //height and width to compensate.
+                float offsetLeft = (padLeft / 100) * surface.SurfaceSize.X;
+                float offsetTop = (padTop / 100) * surface.SurfaceSize.Y;
+                viewport.X += offsetLeft;
+                viewport.Width -= offsetLeft;
+                viewport.Y += offsetTop;
+                viewport.Height -= offsetTop;
+
+                //For the right and bottom, all we need to do is reduce height and width.
+                viewport.Width -= (padRight / 100) * surface.SurfaceSize.X;
+                viewport.Height -= (padBottom / 100) * surface.SurfaceSize.Y;
+                
                 _sb.Clear();
-                //If there's no title, we don't need to leave any space for it.
-                float titleY = 0;
-                //If there's a title, though, we'll need to make room for that.
+                //Assume there's no title
+                float titleHeight = 0;
                 if (!string.IsNullOrEmpty(title))
                 {
-                    //Feed our title into the stringbuilder
+                    //Figure out how much vertical space the title's text requires.
                     _sb.Append(title);
-                    //Figure out how much vertical space we'll need to leave off to accomodate it.
-                    titleY = surface.MeasureStringInPixels(_sb, font, fontSize).Y;
+                    titleHeight = surface.MeasureStringInPixels(_sb, font, fontSize).Y;
                     //Create the titleAnchor that we'll lash the title sprite to.
-                    titleAnchor = new Vector2(surface.SurfaceSize.X / 2, 0);
-                    titleAnchor += viewport.Position;
+                    if (titleObeysPadding)
+                    { titleAnchor = new Vector2(viewport.Width / 2 + viewport.X, viewport.Y); }
+                    else
+                    {
+                        //We've already applied the padding values to the viewport. If we want the
+                        //title anchor to be independent of those but still take into account any
+                        //differences between TextureSize and SurfaceSize, we need to go back to 
+                        //the original numbers.
+                        titleAnchor = new Vector2(surface.TextureSize.X / 2,
+                            (surface.TextureSize.Y - surface.SurfaceSize.Y) / 2);
+                        //The element anchors will need to be positioned so they don't overlap with 
+                        //the title. But if the padding value is large enough, that won't be an issue.
+                        titleHeight = Math.Max(titleHeight - padTop, 0);
+                    }
                 }
-                //The number of rows we'll have is the number of elements, divided by how many 
-                //columns we're going to display them across.
+                
+                //With the title addressed, we can start gathering the information we need to build
+                //the rest of the anchors.
                 int rows = (int)(Math.Ceiling((double)elements.Count() / columns));
-                //The width of a column is our horizontal space divided by the number of columns
-                float columnWidth = surface.SurfaceSize.X / columns;
-                //The height of a row is the vertical space, minus room for the title, divided by
-                //the number of rows.
-                float rowHeight = (surface.SurfaceSize.Y - titleY) / rows;
-                //Store our current position in the row.
+                float columnWidth = viewport.Width / columns;
+                float rowHeight = (viewport.Height - titleHeight) / rows;
                 int rowCounter = 1;
-                //Handles for the Vectors we'll be working with: One for our current position in the
-                //grid, one that will store our finalized anchor, and one representing how much space
-                //this sprite will take up.
                 Vector2 sectorCenter, anchor, elementSize;
-                //Before we start the loop, we need to make sure our entry point is in the right 
-                //place. We'll start by putting it in the middle of the first row and column
+                
+                //We start off by figuring where the center of the first grid sector is. Where exactly
+                //the anchor will be placed we'll work out in the first part of the loop.
                 sectorCenter = new Vector2(columnWidth / 2, rowHeight / 2);
-                //Then we'll apply the viewport offset
                 sectorCenter += viewport.Position;
-                //Last, we'll adjust the Y based on the height of the title. If there's no title,
-                //this will be 0.
-                sectorCenter.Y += titleY;
+                sectorCenter.Y += titleHeight;
+
                 for (int i = 0; i < elements.Count(); i++)
                 {
-                    //If a tally is null, we can safely ignore it.
-                    //TODO: Monitor. It /shouldn't/ pitch a fit about uninitiated anchors if it
-                    //never has to use them, but you never can tell.
                     if (elements[i] != null)
                     {
                         //Clear the contents of the StringBuilder
