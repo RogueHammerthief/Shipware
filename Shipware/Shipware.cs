@@ -94,6 +94,13 @@ namespace IngameScript
         //anything important, the script can be set to skip update tics to reduce processor loads.
         //The logic and variables are handled by this UpdateDistributor object.
         UpdateDistributor _distributor;
+        //The currently-active state machine
+        StateMachineBase _activeMachine;
+        //Machines that are waiting for their chance to be run. This list includes the active machine.
+        //FAT: Using a dictionary is a bit of overkill, given that it only needs to detect if a 
+        //machine of the same type has already been scheduled, and I've only got like three types of 
+        //machine planned.
+        Dictionary<string, StateMachineBase> _scheduledMachines;
         //Do we have good config?
         bool _haveGoodConfig;
         //And when did we get it?
@@ -173,6 +180,8 @@ namespace IngameScript
             { _log.scriptTag = _tag; }
             //The distributer that handles updateDelays
             _distributor = new UpdateDistributor(_log);
+            //The dictionary that holds running and scheduled state machines
+            _scheduledMachines = new Dictionary<string, StateMachineBase>();
             //DEBUG USE: The text surface we'll be using for debug prints
             //_debugDisplay = Me.GetSurface(1);
             /*
@@ -356,7 +365,9 @@ namespace IngameScript
                 return (argReader.TryParse(args.ToLowerInvariant()));
             };
             //Now incorporating the mildly heretical art of bitwise comparitors.
-            //Is this the update tic?
+            //Update100 is the frequency used by the script when it's operating normally. On these
+            //tics, blocks are polled and pages are drawn. The frequency is only active if the script
+            //has successfully passed evaluation.
             if ((updateSource & UpdateType.Update100) != 0)
             {
                 //Notify the distributor that a tic has occurred. If it's time for an update...
@@ -368,7 +379,59 @@ namespace IngameScript
                     _log.tic();
                 }
             }
-            //Is this us trying to spread out some of our work load with a delayed evaluate?
+            //Update10 is reserved for the operation and handling of state machines. It's only active
+            //when a state machine is running.
+            if ((updateSource & UpdateType.Update10) != 0)
+            {
+                if (_activeMachine != null)
+                {
+                    //Run the state machine's current step
+                    bool machineHasMoreSteps = _activeMachine.next();
+                    if (!machineHasMoreSteps)
+                    {
+                        //Pull and post the machine's summary, if we're expecting one.
+                        if (_activeMachine.generateLogs)
+                        { _log.add(_activeMachine.getSummary()); }
+                        //Special handling for specific machines would go here.
+                        /* From the testbed script:
+                        MachineNameLister nameLister = _activeMachine as MachineNameLister;
+                        if (nameLister != null)
+                        {
+                            _sb.Append($"Final Lister report:\n {nameLister.sb.ToString()}");
+                        }*/
+
+                        _activeMachine.end();
+                        _scheduledMachines.Remove(_activeMachine.MACHINE_NAME);
+                        //Set the active machine to null. This will prompt the main method to check
+                        //the queue for another machine on the next Update10.
+                        _activeMachine = null;
+                    }
+                }
+                //If there is no active machine...
+                else
+                {
+                    if (_scheduledMachines.Count > 0)
+                    {
+                        //Grab the next state machine from the list
+                        _activeMachine = _scheduledMachines.Values.ElementAt(0);
+                        _activeMachine.begin();
+                    }
+                    else
+                    //If there's nothing else, shut down the state machine frequency.
+                    //MONITOR. Bitwise operators are heresy, and this is the most heretical of the bunch.
+                    //Just in case I need to look this up again: & is the logical AND, &= is an AND-
+                    //Assign. Or something. Think +=. ~ is the bitwise complement operator. So what 
+                    //this is doing is setting the runtime frequency of the current frequency AND the
+                    //complement of the Update10 operand, which is to say, every bit is 1 except for 
+                    //the one actually associated with this flag.
+                    { Runtime.UpdateFrequency &= ~UpdateFrequency.Update10; }
+                }
+                //DEBUG USE
+                //_debugDisplay.WriteText($"{_activeMachine?.status ?? "No active machine"}\n", true);
+            }
+            //UpdateOnce is reserved for running a follow-up evaluated in the next tic, in order to
+            //spread out the work load.
+            //It will soon be replaced by a dedicated state machine for evaluation.
             else if ((updateSource & UpdateType.Once) != 0)
             { evaluateFull(new LimitedMessageLog(_sb, 15)); }
             //Is this the IGC wanting attention?
@@ -1093,10 +1156,14 @@ namespace IngameScript
                         //sprites in place of each Report element; hopefully forcing the server to
                         //update them
                         case "resetreports":
+                            /*
                             foreach (IReportable reportable in _reports)
                             { reportable.setProfile(); }
                             _log.add($"Carried out ResetReports command, re-applying text surface " +
                                 $"variables of {_reports.Length} Reports.");
+                            */
+                            //The scheduler will take care of any log entries or other notifications.
+                            tryScheduleMachine(new SpriteRefreshMachine(this, _reports, true));
                             break;
 
                         //If the user just /has/ to have an update, right now, for some reason, we
@@ -1126,8 +1193,7 @@ namespace IngameScript
 
                         //Test function. What exactly it does changes from day to day.
                         case "test":
-                            //evaluate();
-                            _log.add("Test function executed.");
+                            //tryScheduleMachine(new FillerMachine(this, 30, true));
                             break;
 
                         //If we don't know what the user is telling us to do, complain.
@@ -1318,6 +1384,31 @@ namespace IngameScript
         //  Defaults to null.
         public void findBlocks<T>(List<T> blocks, Func<T, bool> collect = null) where T : class
         { GridTerminalSystem.GetBlocksOfType<T>(blocks, collect); }
+
+        internal bool tryScheduleMachine(StateMachineBase newMachine)
+        {
+            string machineName = newMachine.MACHINE_NAME;
+            //DEBUG USE
+            /*
+            if (_activeMachine == null)
+            { _debugDisplay.WriteText($"Trying to schedule machine '{machineName}'\n'", false); }
+            */
+            if (!_scheduledMachines.ContainsKey(machineName))
+            {
+                _scheduledMachines.Add(machineName, newMachine);
+                //Start the state machine frequency
+                Runtime.UpdateFrequency |= UpdateFrequency.Update10;
+                if (newMachine.generateLogs)
+                { _log.add($"{machineName} successfully added to scheduled tasks."); }
+                return true;
+            }
+            else
+            //If the same type of machine is already in the queue...
+            {
+                _log.add($"Cannot schedule {machineName} because an identical task is already scheduled.");
+                return false;
+            }
+        }
 
         //Writes all the linked declarations to a single string.
         public string writeDeclarations(List<Tally> tallies, List<ActionSet> actions, List<Trigger> triggers,
@@ -4309,6 +4400,180 @@ namespace IngameScript
             }
             return blocks.Count;
         }
+
+        internal abstract class StateMachineBase
+        {
+            //The name of the machine extending this base
+            public string MACHINE_NAME { get; private set; }
+            //Once the machine exceeds the instruction limit, it will yield.
+            protected int INSTRUCTION_LIMIT { get; private set; }
+            //A reference to the external program, mostly for the purpose of determining what this 
+            //tic's instruction count is.
+            protected MyGridProgram program { get; private set; }
+            //The actual state machine
+            protected IEnumerator<string> sequence;
+            //The number of updates this instance has received
+            public int uptime { get; private set; }
+            //The total number of instructions this instance has used
+            public int totalInstructions { get; private set; }
+            //The machine's current status
+            public string status { get; protected set; }
+            //Is a summary of this machine's actions expected?
+            public bool generateLogs { get; private set; }
+
+            public StateMachineBase(MyGridProgram program, string machineName, double allowedPercentOfInstructions,
+                bool createSummary)
+            {
+                this.program = program;
+                MACHINE_NAME = machineName;
+                INSTRUCTION_LIMIT = (int)(program.Runtime.MaxInstructionCount * allowedPercentOfInstructions);
+                uptime = 0;
+                totalInstructions = 0;
+                status = $"{MACHINE_NAME} waiting to begin";
+                generateLogs = createSummary;
+            }
+
+            internal abstract void begin();
+            
+            internal bool next()
+            { return sequence.MoveNext(); }
+
+            protected bool isInstructionLimitReached()
+            {
+                if (program.Runtime.CurrentInstructionCount > INSTRUCTION_LIMIT)
+                {
+                    updateStats();
+                    return true;
+                }
+                else
+                { return false; }
+            }
+
+            protected void updateStats()
+            {
+                uptime++;
+                totalInstructions += program.Runtime.CurrentInstructionCount;
+            }
+
+            //internal abstract void end();
+            //I may later decide that there's stuff I want to do with a state machine when it's 
+            //finished. For now, all I really want to do is make sure the enumerator is disposed.
+            internal void end()
+            {
+                sequence.Dispose();
+                status = $"{MACHINE_NAME} completed.";
+            }
+
+            internal abstract string getSummary();
+
+            protected string getStats()
+            {
+                return $"{MACHINE_NAME} used a total of {totalInstructions} / {program.Runtime.MaxInstructionCount} " +
+                    $"({(int)(((double)totalInstructions / program.Runtime.MaxInstructionCount) * 100)}%) " +
+                    $"of instructions allowed in one tic, distributed over {uptime} tics.";
+            }
+        }
+
+        internal class SpriteRefreshMachine : StateMachineBase
+        {
+            //The maximum number of reports the machine will attempt to refrest in a single tic.
+            const int MAX_REFRESH_PER_TIC = 20;
+            //The minimum number of tics we want this process to be distributed over.
+            //It's a double to avoid an ambiguous call to Math.Ceiling
+            const double MIN_DESIRED_TICS = 4;
+            //The reports this machine will refresh.
+            IReportable[] reports;
+
+            public SpriteRefreshMachine(MyGridProgram program, IReportable[] reports, bool createSummary) : 
+                base(program, "Sprite Refresher", .1, createSummary)
+            { this.reports = reports; }
+
+            internal override void begin()
+            {
+                sequence = refresherSequence();
+                status = $"{MACHINE_NAME} started";
+            }
+
+            IEnumerator<string> refresherSequence()
+            {
+                //We want sprite refreshing to be distributed over a minimum of 4 tics. Or roughly
+                //4 tics; depending on the numbers involved, we might end up with fewer here due
+                //to rounding.
+                //If we, somehow, have more than 80 seperate reports, we'll do 20 reports per tic and take
+                //more than 4 tics to get the job done. But at 6 possible tics per second and a hard limit
+                //of one refresh every 10 seconds, you'd have to have 1200 reports before you started 
+                //giving the scheduler grief. And at that point, you've probably hit the instruction 
+                //limit on the Update100 processes long ago.
+                int refreshLimit = Math.Min((int)(Math.Ceiling(reports.Length / MIN_DESIRED_TICS)), MAX_REFRESH_PER_TIC);
+                int index = 0;
+                int targetIndex = refreshLimit;
+                foreach (IReportable report in reports)
+                {
+                    report.refresh();
+                    //The refresh method is part of a previous approach to this problem. All it 
+                    //does is tell the report include or exclude an invisible sprite the next time 
+                    //the report is drawn, forcing the server to re-sync the cache.
+                    //This approach is focused on even distribution of networks load, so we'll call
+                    //update immediately instead of waiting for it to come around on its own.
+                    report.update();
+                    index++;
+                    //On the other state machines, this is the sort of place where we'd check against
+                    //the instruction limit. For this one, we're just interested in distributing the
+                    //network load semi-evenly, and we only check against an arbitrary internal limit.
+                    //MONITOR. The limit is set so low that the instruction limit should never come 
+                    //close to being hit, but it is theoretically possible. A call to isInstructionLimitReached()
+                    //could be included here if needed.
+                    if (index >= targetIndex)
+                    {
+                        targetIndex += refreshLimit;
+                        status = $"{MACHINE_NAME} report {index}/{reports.Length}";
+                        updateStats();
+                        yield return status;
+                    }
+                }
+            }
+
+            internal override string getSummary()
+            {
+                return $"{MACHINE_NAME} finished. Re-sync'd sprites on {reports.Length} surfaces.\n" +
+                    $"{getStats()}";
+            }
+        }
+
+        //A state machine for debug use. It exists only to sit in the queue and be in the way of
+        //other things happening.
+        /*
+        internal class FillerMachine : StateMachineBase
+        {
+            int targetLifetime;
+
+            public FillerMachine(MyGridProgram program, int targetLifetime, bool createSummary) :
+                base(program, "Filler", .1, createSummary)
+            { this.targetLifetime = targetLifetime; }
+
+            internal override void begin()
+            {
+                sequence = fillerSequence();
+                status = $"{MACHINE_NAME} started";
+            }
+
+            IEnumerator<string> fillerSequence()
+            {
+                for (int i = 0; i < targetLifetime; i++)
+                {
+                    status = $"{MACHINE_NAME} tic {i}/{targetLifetime}";
+                    updateStats();
+                    yield return status;
+                }
+            }
+
+            internal override string getSummary()
+            {
+                return $"{MACHINE_NAME} finished.\n" +
+                    $"{getStats()}";
+            }
+        }*/
+
         /*
         private void checkPadding(string firstEdgeName, ref float firstEdgeValue, 
             string secondEdgeName, ref float secondeEdgeValue) 
@@ -7055,6 +7320,8 @@ namespace IngameScript
             void update();
             //Perform an update without considering if one is needed.
             void forceUpdate();
+            //Used to force sprite syncing for reports. Other objects get dummy methods.
+            void refresh();
         }
 
         //Intreface implemented by non-MFD reportables
@@ -7155,6 +7422,9 @@ namespace IngameScript
 
             public void forceUpdate()
             { pages[pageName].forceUpdate(); }
+
+            public void refresh()
+            { pages[pageName].refresh(); }
         }
 
         public class GameScript : IReportable, IHasColors
@@ -7183,6 +7453,10 @@ namespace IngameScript
             { }
 
             public void forceUpdate()
+            { }
+
+            //Keen's scripts run on the client, so they don't need to be refreshed.
+            public void refresh()
             { }
 
             //Prepare this suface to display its ingame script.
@@ -7215,6 +7489,10 @@ namespace IngameScript
             public string title { get; set; }
             //The title gets its very own anchor.
             Vector2 titleAnchor;
+            //To force synchronization of sprites to clients in multiplayer, we alter the number
+            //of sprites drawn. This boolean tracks if the 'refresh sprite' is currently being
+            //included or not.
+            bool includeRefreshSprite;
 
             public Report(IMyTextSurface surface, List<IHasElement> elements, string title = "", float fontSize = 1f, string font = "Debug")
             {
@@ -7240,6 +7518,8 @@ namespace IngameScript
                 //NOTE: Until further notice, setAnchors will not be called during construction.
                 //Status Date: 20201229
                 /*setAnchors(3);*/
+                //We won't include a refresh sprite until we're explicitly told to do so. 
+                includeRefreshSprite = false;
             }
 
             public void setAnchors(int columns, float padLeft, float padRight, 
@@ -7361,7 +7641,15 @@ namespace IngameScript
                 MySprite sprite;
                 using (MySpriteDrawFrame frame = surface.DrawFrame())
                 {
-                    //If this report has a title, we'll start by drawing it.
+                    //If we're currently drawing the refresh sprite, we'll start with it.
+                    if (includeRefreshSprite)
+                    {
+                        //Both the position and the size of the sprite will be 0, 0.
+                        Vector2 zeroes = new Vector2(0, 0);
+                        sprite = MySprite.CreateSprite("IconEnergy", zeroes, zeroes);
+                        frame.Add(sprite);
+                    }
+                    //Next comes the title sprite, if available
                     if (!string.IsNullOrEmpty(title))
                     {
                         sprite = MySprite.CreateText(title, font, surface.ScriptForegroundColor,
@@ -7390,6 +7678,11 @@ namespace IngameScript
             public void forceUpdate()
             { update(); }
 
+            //When run, forces the server and client to re-sync this report's sprites on the next 
+            //call to update(). Has no effect in single player (probably)
+            public void refresh()
+            { includeRefreshSprite = !includeRefreshSprite; }
+
             //Prepare this surface for displaying the report.
             public void setProfile()
             {
@@ -7397,6 +7690,13 @@ namespace IngameScript
                 surface.Script = "";
                 surface.ScriptForegroundColor = foreColor;
                 surface.ScriptBackgroundColor = backColor;
+            }
+
+            //The code for the 'thunderbolt transitions', previously in the setProfile method above.
+            //It's been completely replaced by the new Sprite Refresher state machine implementation,
+            //but I just couldn't bear to part with it. Stupid nostolgia.
+            public void transition()
+            {
                 //To save on data transfer in multiplayer, the server only sends out updated sprites
                 //if they've 'changed enough'. But sometimes (Especially when using MFDs), our 
                 //elements won't meet that bar. So this iteration of setProfile will draw a throwaway
@@ -7676,6 +7976,13 @@ namespace IngameScript
 
             public void forceUpdate()
             { surface.WriteText(prepareText(broker.getData())); }
+
+            //I'm not sure how exactly text surfaces work. I think that under the hood, they're
+            //essentially sprites, yet they never seem to have any probelm with text syncing.
+            //Perhaps the text is sent to clients, and then the sprite is rendered locally?
+            //Anyway, WOTs don't need to do anything when refresh is called.
+            public void refresh()
+            { }
 
             //Prepare this suface to display its text, and write the initial text.
             public void setProfile()

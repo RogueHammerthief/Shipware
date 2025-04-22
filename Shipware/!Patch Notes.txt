@@ -196,14 +196,20 @@ v 0.802
   area that should be ignored on that side.
    >Also added a 'TitleObeysPadding' key that determines if a report's Title should be affected by
     padding values. Default value is 'false'.
-
+	
+ -!TODO! State machine status printed to EventLog header.
+ -!TODO! Systems for running and configuring sprite auto-refresher (Default off)
+ -!TODO! Cooldown for ResetReports, seperate from the auto-refresher.
+ -?TODO? Remove handling for Thunderbolt transitions?
+ -!TODO! Make MFDs flip instantly to Element pages (Include handling for same number of elements?)
+ 
+v 0.803
+ -!TODO! Multi-tic evaluate and AutoPopulate (20240304)
  -!TODO! TerminalValues (20240910). Possibly build into TerminalProperties as -values instead of 
   making a seperate command.
- -!TODO! Report Padding
  -!TODO! ResetReports as an ActionSet key (20240917)
  -!TODO! 'Simple' raycast module
  -!TODO! Global LimitedMessageLog? (20240221)
- -!TODO! Multi-tic evaluate and AutoPopulate (20240304)
  -!TODO! Cyclers
  -!TODO! Combined Info Datatype - Combination of DetailInfo and CustomInfo
  -!TODO! ActionSet IgnoreIGC toggle
@@ -219,10 +225,10 @@ v 0.802
  -?TODO? CustomData WOT multi-page capability (20230523).
  -!TODO! See if I need to rename the script. Current rename contenders: Toolkit, GridUI.
  -*TODO* Color-code Warnings, Errors, and Messages? Maybe timestamps as well (Waiting on bug fixes)
- -Added new ActionSet handlers CameraRaycastEnable and CameraRaycastDisable. Note that cameras linked
-  to the script's Raycasters have this function enabled automatically; these handlers are included 
-  mostly to give you a way of turning the function off for a camera that won't be used to perform
-  Raycast scans anymore. 
+ -UNDOCUMENTED .801:  Added new ActionSet handlers CameraRaycastEnable and CameraRaycastDisable. 
+  Note that cameras linked to the script's Raycasters have this function enabled automatically; 
+  these handlers are included mostly to give you a way of turning the function off for a camera 
+  that won't be used to perform Raycast scans anymore. 
 
  General Information and Best Practices documentation section
  -Overview of Ini Format
