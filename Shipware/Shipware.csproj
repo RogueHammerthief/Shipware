@@ -38,6 +38,7 @@
   <Import Project="MDK/MDK.options.props" />
   <Import Project="MDK/MDK.paths.props" Condition="exists('MDK/MDK.paths.props')" />
   <ItemGroup>
+    <None Include="!Config Scraps\Stork.ini" />
     <None Include="!Config Scraps\Barracuda 2.ini" />
     <None Include="!Config Scraps\Barracuda.ini" />
     <None Include="!Pre-Git Pre-Fork Backups\Ship Manager 20201215.cs" />
@@ -62,6 +63,7 @@
     <None Include="!Pre-Git Version Archive\ShipWare 20240527 %28.8%29.cs" />
     <None Include="!Pre-Git Version Archive\ShipWare 20241014 %28.801%29.cs" />
     <None Include="CodeJournal.cs" />
+    <None Include="!Minified Version Archive\Shipware v.802.cs" />
     <Compile Include="MDK\Bootstrapper.cs" />
     <AdditionalFiles Include="MDK\MDK.options.props">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
@@ -71,6 +73,7 @@
     </AdditionalFiles>
     <AdditionalFiles Include="Instructions.readme" />
     <AdditionalFiles Include="MDK\whitelist.cache" />
+    <None Include="Shipware Live.cs" />
     <Compile Include="Shipware.cs" />
   </ItemGroup>
   <ItemGroup>
@@ -86,6 +89,7 @@
     <Content Include="!Patch Notes.txt" />
     <Content Include="thumb.png" />
   </ItemGroup>
+  <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <Target Name="AfterBuild">
     <Copy SourceFiles="MDK\MDK.options.props" DestinationFolder="$(TargetDir)\MDK" />
