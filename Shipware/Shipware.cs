@@ -1453,22 +1453,23 @@ namespace IngameScript
             List<Raycaster> raycasters)
         {
             string declarations;
+            string divider = ";=======================================\n\n";
             _sb.Clear();
 
             foreach (Tally tally in tallies)
             { _sb.Append(tally.writeConfig()); }
             if (tallies.Count > 0)
-            { _sb.Append(";=======================================\n\n"); }
+            { _sb.Append(divider); }
 
             foreach (ActionSet action in actions)
             { _sb.Append(action.writeConfig()); }
             if (actions.Count > 0)
-            { _sb.Append(";=======================================\n\n"); }
+            { _sb.Append(divider); }
 
             foreach (Trigger trigger in triggers)
             { _sb.Append(trigger.writeConfig()); }
             if (triggers.Count > 0)
-            { _sb.Append(";=======================================\n\n"); }
+            { _sb.Append(divider); }
 
             foreach (Raycaster raycaster in raycasters)
             { _sb.Append(raycaster.writeConfig()); }
@@ -1478,6 +1479,71 @@ namespace IngameScript
             return declarations;
         }
 
+        /// <summary name = "AutoPopulate">
+        ///   <process>
+        ///       AP starts by consulting the Excluded Declarations listing. It then hands that list 
+        ///     to compileAPTemplates, which constructs the templates that AP will be using to 
+        ///     identify what kinds of declarations are relevant to the grid. Excluded declarations
+        ///     are filtered out at the end of that method.
+        ///       There are three types of templates. All of them hold either a Tally or ActionSet 
+        ///     object, alongside a lambda expression used to identify blocks on the grid relevant
+        ///     to that template. TallyCargos also get a lambda that lets them identify containers
+        ///     that can hold their item, while ActionSetTemplates get a function that writes their
+        ///     discrete section.
+        ///       Once the templates are set, we return to the main body of the AutoPopulate method,
+        ///     and start laying the groundwork for the Roost set. This is just for the basics,
+        ///     things that won't change: header, display name, text and colors, etc. The state lists
+        ///     are set much later in the process.
+        ///       The next step is to determine what templates are relevant to this grid. The first
+        ///     way they're deemed relevent is if their declarations are already on the PB. If a 
+        ///     declaration is already present, that template is removed from the ToCheck list and added
+        ///     to an in-use list. It's also removed from the 'templates to write' list, because it's
+        ///     already written.
+        ///       We then move on to scanning the grid itself. Here, we keep a HashSet of block types
+        ///     that we've already encountred, to keep us from doing the same work twice. For blocks
+        ///     that we haven't encountered, we check the block against the conditional of every template
+        ///     remaining in the ToCheck list. If there's a match, we add that template to one of the
+        ///     In Use lists.
+        ///       With all the templates relevant to this grid in hand, we can write the declarations
+        ///     from the toWrite list to the PB. But there's a couple of things we need to take care 
+        ///     of before moving on to the grid at large. First, we need to write the 
+        ///     ActionSetsLinkedToOn/Off keys of the Roost set, which we do with a fairly intelligent 
+        ///     process that preserves existing entries in each state list. After that, we build the 
+        ///     APScreen MFD, using a dumb process that rejects existing config and substitutes our 
+        ///     own.
+        ///       At last we're ready to address the grid at large. In many ways, this process is 
+        ///     similar to what we did in the grid identification pass we did earlier. Once again
+        ///     we keep a record of block types that we've already encountered, but along side that
+        ///     we store the config we wrote to the first block of that type we encountered in an
+        ///     APConfigEntry. ConfigEntries contain two objects, the first being a single string 
+        ///     containing a comma-seperated list of declarations to be linked to this block 
+        ///     (Usually tallies. Always Tallies, actually, but APConfigEntry is written in such a 
+        ///     way that a seperate instance of the object could be used to store a list of ActionSet 
+        ///     links, if AP dealt with those). The second object is a bool, 
+        ///   </process>
+        ///   <notes>
+        ///     <1>AutoPopulate can be split into three major regions: The PB pass, where the custom
+        ///        data of the programmable block is read to see what config, if any, is already 
+        ///        present on this grid. The Grid Identification (Or discovery) pass, where the 
+        ///        blocks on the grid are analyzed to determing what Tallies and ActionSets are 
+        ///        relevant. And the Grid Assignment pass, where config is written to the custom
+        ///        data of the grid's blocks.</1>
+        ///     <2>AP makes liberal use of String.Contains in the assignment pass, to determine if 
+        ///        a link is already present. This is mitigated by the fact that it only does this 
+        ///        once per block type, but that does mean a lot of processing is going to be 
+        ///        frontloaded into those first few thousand instructions. And it will only get worse
+        ///        the longer the strings - and list of templates - grows. See possible mitigation
+        ///        in 20250605.</2>
+        ///   </notes>
+        /// </summary>
+        /// <param name="apBlocks"></param>
+        /// <param name="pbParse"></param>
+        /// <param name="mode"></param>
+        /// <param name="outcome"></param>
+        /// <returns>
+        ///   A boolean that returns true if the operation ran successfully (There may not be a 
+        ///   provision for the operation not running successfully).
+        /// </returns>
         public bool AutoPopulate(List<IMyTerminalBlock> apBlocks, MyIni pbParse, string mode, ref string outcome)
         {
             //DEBUG USE
@@ -1812,7 +1878,7 @@ namespace IngameScript
             //_debugDisplay.WriteText($"Beginning Assignment pass\n", true);
             Dictionary<MyDefinitionId, APBlockConfig> storedConfig = new Dictionary<MyDefinitionId, APBlockConfig>();
             APBlockConfig blockConfig = null;
-            int debugBlockConfigsCreated = 0;
+            //int debugBlockConfigsCreated = 0;
             int totalBadParseCount = 0;
             int linkedBlockCount = 0;
             //Returns true if the block was successfully parsed. The parse will be in the blockParse variable.
@@ -1842,7 +1908,7 @@ namespace IngameScript
                     if (getParseOrHandleFailure(b, ini))
                     {
                         blockConfig = new APBlockConfig(b, ini, _tag);
-                        debugBlockConfigsCreated++;
+                        //debugBlockConfigsCreated++;
                         //_debugDisplay.WriteText($"  >Created APBlockConfig object for block {b.CustomName}\n", true);
 
                         return true;
@@ -1871,7 +1937,10 @@ namespace IngameScript
                         //already on the block?
                         if (getParseOrHandleFailure(block, blockParse))
                         {
-                            blockConfig.writeConfigToIni(_tag, blockParse);
+                            //I'd like to have a seperate forceWriteConfigToIni to use when the block
+                            //is missing a Common Section, to make this more readable. But with the 
+                            //character limit looming, I'm just going to cram everything into one line.
+                            blockConfig.writeConfigToIni(_tag, blockParse, !blockParse.ContainsSection(_tag));
                             block.CustomData = blockParse.ToString();
                             linkedBlockCount++;
                         }
@@ -1891,8 +1960,7 @@ namespace IngameScript
                         {
                             //As the name suggests, this subroutine will create a block config object 
                             //for us if we haven't yet this run, and parse the block's CustomData.
-                            //It returns false only if the parse fails, at which point that will be
-                            //logged and badParse will be set, canceling the rest of the loop.
+                            //It returns false only if the parse fails
                             if (tryParseIniAndCreateBlockConfig(block, blockParse))
                             //As per always, the tally generic version of this doesn't have much going on.
                             { blockConfig.addLink("Tallies", genTemplate.name); }
@@ -2720,10 +2788,10 @@ namespace IngameScript
                 { createNewConfigEntry(key, link, true); }
             }
 
-            public void writeConfigToIni(string section, MyIni ini)
+            public void writeConfigToIni(string section, MyIni ini, bool forceWrite = false)
             {
                 foreach (KeyValuePair<string, APConfigEntry> pair in config)
-                { pair.Value.writeEntryToIni(ini, section, pair.Key); }
+                { pair.Value.writeEntryToIni(ini, section, pair.Key, forceWrite); }
                 //If we've been holding on to a template, tell it to write its discrete section. 
                 if (template != null)
                 { template.writeDiscreteEntry(ini); }
@@ -2752,10 +2820,10 @@ namespace IngameScript
             }
 
             //Overwrites an ini entry at the designated section and key, but only if this entry has
-            //been modified.
-            public void writeEntryToIni(MyIni ini, string section, string key)
+            //been modified (Or we're explicitly telling it to)
+            public void writeEntryToIni(MyIni ini, string section, string key, bool forceWrite)
             {
-                if (isModified)
+                if (isModified || forceWrite)
                 { ini.Set(section, key, links); }
             }
         }
@@ -2907,6 +2975,14 @@ namespace IngameScript
                 { reportable.setProfile(); }
                 //{ reportable.setProfile(); }
                 //_debugDisplay.WriteText("Finished setProfile calls\n", true);
+
+                //We need to clear up a few peristant bits that may or may not be coming over from
+                //the previous script instance. First, any leftover state machines
+                _activeMachine?.end();
+                _activeMachine = null;
+                _scheduledMachines.Clear();
+                //We won't mess with Update10. At the end of this, we're setting Update100, which
+                //will do the job for us.
 
                 //One of the last things we need to do is set up the Distributor.
                 _distributor.clearPeriodics();
