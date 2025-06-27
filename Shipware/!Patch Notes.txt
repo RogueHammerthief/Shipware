@@ -190,7 +190,7 @@ v 0.8011
    >IsolatedCockpitSubTypes: Bridge Helm
    >ShelfSubTypes: Fridge, First Aid cabinet, Lab Cabinet, Lab Freezer
 
-v 0.802 (Count 99633)
+v 0.802 (Count 99615)
  -Added an Auto Refresh system to combat sprite desync on dedicated servers. Auto Refresh frequency
   is controlled by the new 'MPSpriteSyncFrequency' key in the script's Init section. The integer value
   entered controls how many update tics will pass between each refresh, with the default value of -1 

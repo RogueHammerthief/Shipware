@@ -33,7 +33,7 @@ namespace IngameScript
     partial class Program : MyGridProgram
     {
         //The version number of this code
-        const double _VERSION = .8011;
+        const double _VERSION = .802;
         //The default ID of the script, to be used if no custom ID is set.
         const string _DEFAULT_ID = "Shipware";
         //The prefix used to identify all components of the script, regardless of changes the user
@@ -93,7 +93,17 @@ namespace IngameScript
         //roughly once every second and a half. If the grid the script is running on isn't doing 
         //anything important, the script can be set to skip update tics to reduce processor loads.
         //The logic and variables are handled by this UpdateDistributor object.
-        UpdateDistributor _distributor;
+        //UpdateDistributor _distributor;
+        //The new version of the distributor handles periodic events (Script updates, sprite refresh)
+        //as well as tracking cooldowns on demanding script commands.
+        Distributor _distributor;
+        //The currently-active state machine
+        StateMachineBase _activeMachine;
+        //Machines that are waiting for their chance to be run. This list includes the active machine.
+        //FAT: Using a dictionary is a bit of overkill, given that it only needs to detect if a 
+        //machine of the same type has already been scheduled, and I've only got like three types of 
+        //machine planned.
+        Dictionary<string, StateMachineBase> _scheduledMachines;
         //Do we have good config?
         bool _haveGoodConfig;
         //And when did we get it?
@@ -172,7 +182,9 @@ namespace IngameScript
             if (_tag != $"{_SCRIPT_PREFIX}.{_DEFAULT_ID}")
             { _log.scriptTag = _tag; }
             //The distributer that handles updateDelays
-            _distributor = new UpdateDistributor(_log);
+            _distributor = new Distributor();
+            //The dictionary that holds running and scheduled state machines
+            _scheduledMachines = new Dictionary<string, StateMachineBase>();
             //DEBUG USE: The text surface we'll be using for debug prints
             //_debugDisplay = Me.GetSurface(1);
             /*
@@ -244,6 +256,8 @@ namespace IngameScript
                 "ColorCaution",
                 "ColorWarning",
                 "ColorCritical",
+                //SpriteRefresh
+                "MPSpriteSyncFrequency",
                 //AutoPopulate
                 "APExcludedBlockTypes",
                 "APExcludedBlockSubTypes",
@@ -257,6 +271,8 @@ namespace IngameScript
                 "Yellow",
                 "Orange",
                 "Red",
+                //Sprite refresh
+                "-1",
                 //AutoPopulate
                 //|----------------------------------------------------------|
                 ("MyObjectBuilder_ConveyorSorter, MyObjectBuilder_ShipWelder,\n" +
@@ -282,6 +298,8 @@ namespace IngameScript
                 false,
                 false,
                 false,
+                //Sprite refresh
+                true,
                 //AutoPopulate
                 true,
                 true,
@@ -310,7 +328,11 @@ namespace IngameScript
             //Store the ID of this instance of the script as well.
             _iniReadWrite.Set("Data", "ID", _customID);
             //Store the current value of the update delay
-            _iniReadWrite.Set("Data", "UpdateDelay", _distributor.updateDelay);
+            int updateDelay = _distributor.getPeriodicFrequency("UpdateDelay");
+            //The new distributor returns a -1 if there's no periodic by a given name loaded, which 
+            //can happen now and again for updateDelay. In that case, just write a 0 to the storage
+            //string.
+            _iniReadWrite.Set("Data", "UpdateDelay", updateDelay == -1 ? 0 : updateDelay);
             if (_sets != null)
             {
                 //For every ActionSet named in our sets dictionary...
@@ -356,19 +378,83 @@ namespace IngameScript
                 return (argReader.TryParse(args.ToLowerInvariant()));
             };
             //Now incorporating the mildly heretical art of bitwise comparitors.
-            //Is this the update tic?
+            //Update100 is the frequency used by the script when it's operating normally. On these
+            //tics, blocks are polled and pages are drawn. The frequency is only active if the script
+            //has successfully passed evaluation.
             if ((updateSource & UpdateType.Update100) != 0)
             {
                 //Notify the distributor that a tic has occurred. If it's time for an update...
-                if (_distributor.tic())
+                /*if (_distributor.tic())
                 {
                     compute();
                     update();
                     //And tell the log about it
                     _log.tic();
-                }
+                }*/
+                //With the new Distributor, all we do is tell it to tic. The periodics know what they 
+                //need to do.
+                _distributor.tic();
             }
-            //Is this us trying to spread out some of our work load with a delayed evaluate?
+            //Update10 is reserved for the operation and handling of state machines. It's only active
+            //when a state machine is running.
+            if ((updateSource & UpdateType.Update10) != 0)
+            {
+                if (_activeMachine != null)
+                {
+                    //Run the state machine's current step
+                    bool machineHasMoreSteps = _activeMachine.next();
+                    _log.machineStatus = _activeMachine.status;
+                    if (!machineHasMoreSteps)
+                    {
+                        //Pull and post the machine's summary, if we're expecting one.
+                        if (_activeMachine.generateLogs)
+                        { _log.add(_activeMachine.getSummary()); }
+                        //Special handling for specific machines would go here.
+                        /* From the testbed script:
+                        MachineNameLister nameLister = _activeMachine as MachineNameLister;
+                        if (nameLister != null)
+                        {
+                            _sb.Append($"Final Lister report:\n {nameLister.sb.ToString()}");
+                        }*/
+
+                        _activeMachine.end();
+                        _scheduledMachines.Remove(_activeMachine.MACHINE_NAME);
+                        //Set the active machine to null. This will prompt the main method to check
+                        //the queue for another machine on the next Update10.
+                        _activeMachine = null;
+                    }
+                }
+                //If there is no active machine...
+                else
+                {
+                    if (_scheduledMachines.Count > 0)
+                    {
+                        //Grab the next state machine from the list
+                        _activeMachine = _scheduledMachines.Values.ElementAt(0);
+                        _activeMachine.begin();
+                    }
+                    else
+                    {
+                        //If there's nothing else, shut down the state machine frequency.
+                        //MONITOR. Bitwise operators are heresy, and this is the most heretical of the bunch.
+                        //Just in case I need to look this up again: & is the logical AND, &= is an AND-
+                        //Assign. Or something. Think +=. ~ is the bitwise complement operator. So what 
+                        //this is doing is setting the runtime frequency of the current frequency AND the
+                        //complement of the Update10 operand, which is to say, every bit is 1 except for 
+                        //the one actually associated with this flag.
+                        Runtime.UpdateFrequency &= ~UpdateFrequency.Update10;
+                        //Let the log know that there's nothing happening.
+                        _log.machineStatus = "";
+                    }
+                }
+                //Think the log is always echo'd at the end of main?
+                //Echo(_log.toString());
+                //DEBUG USE
+                //_debugDisplay.WriteText($"{_activeMachine?.status ?? "No active machine"}\n", true);
+            }
+            //UpdateOnce is reserved for running a follow-up evaluated in the next tic, in order to
+            //spread out the work load.
+            //It will soon be replaced by a dedicated state machine for evaluation.
             else if ((updateSource & UpdateType.Once) != 0)
             { evaluateFull(new LimitedMessageLog(_sb, 15)); }
             //Is this the IGC wanting attention?
@@ -559,7 +645,7 @@ namespace IngameScript
                                     {
                                         //If the MFD declines to set the page to the one named in 
                                         //the command...
-                                        if (!targetMFD.trySetPage(MFDPageCommand))
+                                        if (!targetMFD.trySetPageByName(MFDPageCommand))
                                         {
                                             //... Complain.
                                             _log.add($"Received command to set MFD '{MFDTarget}' to unknown " +
@@ -586,7 +672,7 @@ namespace IngameScript
                                 outcome = tryMatchAction(argReader.Argument(1),
                                     argReader.Argument(2), "");
                                 //If something happened that we need to tell the user about...
-                                if (!String.IsNullOrEmpty(outcome))
+                                if (!isEmptyString(outcome))
                                 { _log.add(outcome); }
                             }
                             //If the user did not give us the correct number of arguments, complain.
@@ -641,7 +727,7 @@ namespace IngameScript
                             else
                             {
                                 Me.CustomData = $"{_nonDeclarationPBConfig}\n";
-                                if (!string.IsNullOrEmpty(_nonDeclarationPBConfig))
+                                if (!isEmptyString(_nonDeclarationPBConfig))
                                 { Me.CustomData += ";=======================================\n\n"; }
                                 Me.CustomData += writeDeclarations(_tallies.ToList(), _sets.Values.ToList(),
                                     _triggers.ToList(), _raycasters.Values.ToList());
@@ -900,7 +986,7 @@ namespace IngameScript
                                 //much heavy lifting anyway, so it should be fine.
                                 //_debugDisplay.WriteText("Handle declarations\n");
                                 MyIniValue iniValue = _iniReadWrite.Get($"{_SCRIPT_PREFIX}.Init", "APExcludedDeclarations");
-                                if (!String.IsNullOrEmpty(iniValue.ToString()))
+                                if (!isEmptyString(iniValue.ToString()))
                                 {
                                     string rawExcludedDeclarations = iniValue.ToString();
                                     outcome += $"These declarations are being excluded from consideration " +
@@ -1093,10 +1179,17 @@ namespace IngameScript
                         //sprites in place of each Report element; hopefully forcing the server to
                         //update them
                         case "resetreports":
+                            /*
                             foreach (IReportable reportable in _reports)
                             { reportable.setProfile(); }
                             _log.add($"Carried out ResetReports command, re-applying text surface " +
                                 $"variables of {_reports.Length} Reports.");
+                            */
+                            //The scheduler will take care of any log entries or other notifications.
+                            if (_distributor.tryAddCooldown("ResetReports", 10, out outcome))
+                            { tryScheduleMachine(new SpriteRefreshMachine(this, _reports, true)); }
+                            else
+                            { _log.add(outcome); }
                             break;
 
                         //If the user just /has/ to have an update, right now, for some reason, we
@@ -1126,8 +1219,14 @@ namespace IngameScript
 
                         //Test function. What exactly it does changes from day to day.
                         case "test":
-                            //evaluate();
-                            _log.add("Test function executed.");
+                            Action testAction = () => { _log.add("Periodic event firing"); };
+                            PeriodicEvent testEvent = new PeriodicEvent(10, testAction);
+                            _distributor.tryAddPeriodic("Test Event", testEvent);
+
+                            if (!_distributor.tryAddCooldown("Test Cooldown", 20, out outcome))
+                            { _log.add(outcome); }
+                            //tryScheduleMachine(new FillerMachine(this, 30, true));
+                            _log.add(_distributor.debugPrintContents());
                             break;
 
                         //If we don't know what the user is telling us to do, complain.
@@ -1285,7 +1384,7 @@ namespace IngameScript
             { set.resetHasActed(); }
             //If we don't have an outcome string yet (Because nothing has gone horribly wrong), and
             //our source string isn't empty (Indicating that we should generate an outcome string)
-            if (String.IsNullOrEmpty(outcome) && !String.IsNullOrEmpty(source))
+            if (isEmptyString(outcome) && !isEmptyString(source))
             {
                 outcome = $"Carried out {source}command '{command}' for ActionSet '{targetSet.programName}'. " +
                     $"The set's state is now '{targetSet.statusText}'.";
@@ -1319,27 +1418,58 @@ namespace IngameScript
         public void findBlocks<T>(List<T> blocks, Func<T, bool> collect = null) where T : class
         { GridTerminalSystem.GetBlocksOfType<T>(blocks, collect); }
 
+        public bool isEmptyString(string input)
+        { return String.IsNullOrEmpty(input); }
+
+        internal bool tryScheduleMachine(StateMachineBase newMachine)
+        {
+            string machineName = newMachine.MACHINE_NAME;
+            //DEBUG USE
+            /*
+            if (_activeMachine == null)
+            { _debugDisplay.WriteText($"Trying to schedule machine '{machineName}'\n'", false); }
+            */
+            if (!_scheduledMachines.ContainsKey(machineName))
+            {
+                _scheduledMachines.Add(machineName, newMachine);
+                //Start the state machine frequency
+                Runtime.UpdateFrequency |= UpdateFrequency.Update10;
+                //MONITOR. I know it doesn't fire when there's no active machine, but I never actually
+                //checked to see if it works when there is an active machine.
+                if (newMachine.generateLogs && _activeMachine != null)
+                { _log.add($"{machineName} successfully added to scheduled tasks."); }
+                return true;
+            }
+            else
+            //If the same type of machine is already in the queue...
+            {
+                _log.add($"Cannot schedule {machineName} because an identical task is already scheduled.");
+                return false;
+            }
+        }
+
         //Writes all the linked declarations to a single string.
         public string writeDeclarations(List<Tally> tallies, List<ActionSet> actions, List<Trigger> triggers,
             List<Raycaster> raycasters)
         {
             string declarations;
+            string divider = ";=======================================\n\n";
             _sb.Clear();
 
             foreach (Tally tally in tallies)
             { _sb.Append(tally.writeConfig()); }
             if (tallies.Count > 0)
-            { _sb.Append(";=======================================\n\n"); }
+            { _sb.Append(divider); }
 
             foreach (ActionSet action in actions)
             { _sb.Append(action.writeConfig()); }
             if (actions.Count > 0)
-            { _sb.Append(";=======================================\n\n"); }
+            { _sb.Append(divider); }
 
             foreach (Trigger trigger in triggers)
             { _sb.Append(trigger.writeConfig()); }
             if (triggers.Count > 0)
-            { _sb.Append(";=======================================\n\n"); }
+            { _sb.Append(divider); }
 
             foreach (Raycaster raycaster in raycasters)
             { _sb.Append(raycaster.writeConfig()); }
@@ -1349,6 +1479,71 @@ namespace IngameScript
             return declarations;
         }
 
+        /// <summary name = "AutoPopulate">
+        ///   <process>
+        ///       AP starts by consulting the Excluded Declarations listing. It then hands that list 
+        ///     to compileAPTemplates, which constructs the templates that AP will be using to 
+        ///     identify what kinds of declarations are relevant to the grid. Excluded declarations
+        ///     are filtered out at the end of that method.
+        ///       There are three types of templates. All of them hold either a Tally or ActionSet 
+        ///     object, alongside a lambda expression used to identify blocks on the grid relevant
+        ///     to that template. TallyCargos also get a lambda that lets them identify containers
+        ///     that can hold their item, while ActionSetTemplates get a function that writes their
+        ///     discrete section.
+        ///       Once the templates are set, we return to the main body of the AutoPopulate method,
+        ///     and start laying the groundwork for the Roost set. This is just for the basics,
+        ///     things that won't change: header, display name, text and colors, etc. The state lists
+        ///     are set much later in the process.
+        ///       The next step is to determine what templates are relevant to this grid. The first
+        ///     way they're deemed relevent is if their declarations are already on the PB. If a 
+        ///     declaration is already present, that template is removed from the ToCheck list and added
+        ///     to an in-use list. It's also removed from the 'templates to write' list, because it's
+        ///     already written.
+        ///       We then move on to scanning the grid itself. Here, we keep a HashSet of block types
+        ///     that we've already encountred, to keep us from doing the same work twice. For blocks
+        ///     that we haven't encountered, we check the block against the conditional of every template
+        ///     remaining in the ToCheck list. If there's a match, we add that template to one of the
+        ///     In Use lists.
+        ///       With all the templates relevant to this grid in hand, we can write the declarations
+        ///     from the toWrite list to the PB. But there's a couple of things we need to take care 
+        ///     of before moving on to the grid at large. First, we need to write the 
+        ///     ActionSetsLinkedToOn/Off keys of the Roost set, which we do with a fairly intelligent 
+        ///     process that preserves existing entries in each state list. After that, we build the 
+        ///     APScreen MFD, using a dumb process that rejects existing config and substitutes our 
+        ///     own.
+        ///       At last we're ready to address the grid at large. In many ways, this process is 
+        ///     similar to what we did in the grid identification pass we did earlier. Once again
+        ///     we keep a record of block types that we've already encountered, but along side that
+        ///     we store the config we wrote to the first block of that type we encountered in an
+        ///     APConfigEntry. ConfigEntries contain two objects, the first being a single string 
+        ///     containing a comma-seperated list of declarations to be linked to this block 
+        ///     (Usually tallies. Always Tallies, actually, but APConfigEntry is written in such a 
+        ///     way that a seperate instance of the object could be used to store a list of ActionSet 
+        ///     links, if AP dealt with those). The second object is a bool, 
+        ///   </process>
+        ///   <notes>
+        ///     <1>AutoPopulate can be split into three major regions: The PB pass, where the custom
+        ///        data of the programmable block is read to see what config, if any, is already 
+        ///        present on this grid. The Grid Identification (Or discovery) pass, where the 
+        ///        blocks on the grid are analyzed to determing what Tallies and ActionSets are 
+        ///        relevant. And the Grid Assignment pass, where config is written to the custom
+        ///        data of the grid's blocks.</1>
+        ///     <2>AP makes liberal use of String.Contains in the assignment pass, to determine if 
+        ///        a link is already present. This is mitigated by the fact that it only does this 
+        ///        once per block type, but that does mean a lot of processing is going to be 
+        ///        frontloaded into those first few thousand instructions. And it will only get worse
+        ///        the longer the strings - and list of templates - grows. See possible mitigation
+        ///        in 20250605.</2>
+        ///   </notes>
+        /// </summary>
+        /// <param name="apBlocks"></param>
+        /// <param name="pbParse"></param>
+        /// <param name="mode"></param>
+        /// <param name="outcome"></param>
+        /// <returns>
+        ///   A boolean that returns true if the operation ran successfully (There may not be a 
+        ///   provision for the operation not running successfully).
+        /// </returns>
         public bool AutoPopulate(List<IMyTerminalBlock> apBlocks, MyIni pbParse, string mode, ref string outcome)
         {
             //DEBUG USE
@@ -1362,7 +1557,7 @@ namespace IngameScript
             //contents of the |APExcludedDeclarations| key.
             MyIniValue iniValue = pbParse.Get($"{_SCRIPT_PREFIX}.Init", "APExcludedDeclarations");
             List<string> excludedDeclarations = null;
-            if (!String.IsNullOrEmpty(iniValue.ToString()))
+            if (!isEmptyString(iniValue.ToString()))
             { excludedDeclarations = iniValue.ToString().Split(',').Select(p => p.Trim()).ToList(); }
             //DEBUG USE
             //_debugDisplay.WriteText("Finished compiling Exclusion hash\n", true);
@@ -1436,6 +1631,13 @@ namespace IngameScript
                 roostSet.colorOff = green;
                 roostSet.textOn = "Roosting";
                 roostSet.textOff = "Active";
+                //One of Roost's big things is that it puts the script in a state where it updates
+                //less frequently. Under the hood, that's handled by a specific kind of ActionPlan.
+                //TODO: When I update this to use a state machine instead, I'll need a reference to
+                //the program here.
+                ActionPlanUpdate updatePlan = new ActionPlanUpdate(this);
+                updatePlan.delayOn = 8;
+                roostSet.addActionPlan(updatePlan);
 
                 //DEBUG USE
                 //_debugDisplay.WriteText("Writing Roost set to pbParse\n", true);
@@ -1557,7 +1759,7 @@ namespace IngameScript
                 Action<string, bool> addActionLinksToRoost = (key, isOn) =>
                 {
                     existingLinks = pbParse.Get(roostHeader, key).ToString();
-                    if (!String.IsNullOrEmpty(existingLinks))
+                    if (!isEmptyString(existingLinks))
                     {
                         //We'll be checking for existing config before we add an entry. Because we're not
                         //sure exactly how much existing config there might be, we'll make one pass through
@@ -1591,7 +1793,7 @@ namespace IngameScript
                     {
                         string programName = actionTemplate.name;
                         desiredState = actionTemplate.getStateWhenRoost(isOn);
-                        if (!(hashedLinks?.Contains(programName) ?? false) && !String.IsNullOrEmpty(desiredState))
+                        if (!(hashedLinks?.Contains(programName) ?? false) && !isEmptyString(desiredState))
                         { splitLinks.Add($"{programName}: {desiredState}"); }
                     }
                     //Send the value back to the PB parse.
@@ -1676,7 +1878,7 @@ namespace IngameScript
             //_debugDisplay.WriteText($"Beginning Assignment pass\n", true);
             Dictionary<MyDefinitionId, APBlockConfig> storedConfig = new Dictionary<MyDefinitionId, APBlockConfig>();
             APBlockConfig blockConfig = null;
-            int debugBlockConfigsCreated = 0;
+            //int debugBlockConfigsCreated = 0;
             int totalBadParseCount = 0;
             int linkedBlockCount = 0;
             //Returns true if the block was successfully parsed. The parse will be in the blockParse variable.
@@ -1706,7 +1908,7 @@ namespace IngameScript
                     if (getParseOrHandleFailure(b, ini))
                     {
                         blockConfig = new APBlockConfig(b, ini, _tag);
-                        debugBlockConfigsCreated++;
+                        //debugBlockConfigsCreated++;
                         //_debugDisplay.WriteText($"  >Created APBlockConfig object for block {b.CustomName}\n", true);
 
                         return true;
@@ -1735,7 +1937,10 @@ namespace IngameScript
                         //already on the block?
                         if (getParseOrHandleFailure(block, blockParse))
                         {
-                            blockConfig.writeConfigToIni(_tag, blockParse);
+                            //I'd like to have a seperate forceWriteConfigToIni to use when the block
+                            //is missing a Common Section, to make this more readable. But with the 
+                            //character limit looming, I'm just going to cram everything into one line.
+                            blockConfig.writeConfigToIni(_tag, blockParse, !blockParse.ContainsSection(_tag));
                             block.CustomData = blockParse.ToString();
                             linkedBlockCount++;
                         }
@@ -1755,8 +1960,7 @@ namespace IngameScript
                         {
                             //As the name suggests, this subroutine will create a block config object 
                             //for us if we haven't yet this run, and parse the block's CustomData.
-                            //It returns false only if the parse fails, at which point that will be
-                            //logged and badParse will be set, canceling the rest of the loop.
+                            //It returns false only if the parse fails
                             if (tryParseIniAndCreateBlockConfig(block, blockParse))
                             //As per always, the tally generic version of this doesn't have much going on.
                             { blockConfig.addLink("Tallies", genTemplate.name); }
@@ -1979,7 +2183,7 @@ namespace IngameScript
             //The code we're using to split the value will add an empty string 
             //to our element list if the value is empty or doesn't exist. We'll
             //check for that before we commit.
-            if (!String.IsNullOrEmpty(iniValue.ToString()))
+            if (!isEmptyString(iniValue.ToString()))
             {
                 elements = iniValue.ToString().Split(',').Select(p => p.Trim()).ToArray();
                 foreach (string element in elements)
@@ -2032,616 +2236,6 @@ namespace IngameScript
             foreach (string entry in excludedSubTypes)
             { _debugDisplay.WriteText($"  {entry}\n", true); }*/
         }
-        //The original version of compileAPTemplates, using a dictionary through and through.
-        /*public Dictionary<string, APTemplate> compileAPTemplates(List<string> excludedDeclarations,
-            LimitedMessageLog apLog)
-        {
-            Dictionary<string, APTemplate> templates = new Dictionary<string, APTemplate>();
-
-            //APTally types: Power, Hydrogen, Oxygen, Cargo, Ice, Stone, Ore, Uranium, Solar,
-            //  JumpDrives, Gatling, Autocannon, Assault, Artillery, RailSmall, RailLarge, Rocket
-            //Roost?
-            //APSet types: Antenna, Batteries, Reactors, HyGens, TanksHydrogen, TanksOxygen, Gyros,
-            //  ThrustersAtmospheric, ThrustersHydrogen, ThrustersIon
-            //  RedLight? Beacon? OreDetector? Spotlights?
-
-            const string ORE_TYPE = "MyObjectBuilder_Ore";
-            const string INGOT_TYPE = "MyObjectBuilder_Ingot";
-            //I may need this one day. May as well leave it here.
-            //const string COMP_TYPE = "MyObjectBuilder_Component";
-            const string AMMO_TYPE = "MyObjectBuilder_AmmoMagazine";
-            MyItemType ICE = new MyItemType(ORE_TYPE, "Ice");
-            MyItemType STONE = new MyItemType(ORE_TYPE, "Stone");
-            MyItemType IRON_ORE = new MyItemType(ORE_TYPE, "Iron");
-            MyItemType URANIUM = new MyItemType(INGOT_TYPE, "Uranium");
-            MyItemType GATLING_AMMO = new MyItemType(AMMO_TYPE, "NATO_25x184mm");
-            MyItemType AUTOCANNON_AMMO = new MyItemType(AMMO_TYPE, "AutocannonClip");
-            MyItemType ASSAULT_AMMO = new MyItemType(AMMO_TYPE, "MediumCalibreAmmo");
-            MyItemType ARTILLERY_AMMO = new MyItemType(AMMO_TYPE, "LargeCalibreAmmo");
-            MyItemType RAIL_SMALL_AMMO = new MyItemType(AMMO_TYPE, "SmallRailgunAmmo");
-            MyItemType RAIL_LARGE_AMMO = new MyItemType(AMMO_TYPE, "LargeRailgunAmmo");
-            MyItemType ROCKET_AMMO = new MyItemType(AMMO_TYPE, "Missile200mm");
-            //These will be needed to identify tank types.
-            MyDefinitionId HYDROGEN_ID = MyDefinitionId.Parse("MyObjectBuilder_GasProperties/Hydrogen");
-            MyDefinitionId OXYGEN_ID = MyDefinitionId.Parse("MyObjectBuilder_GasProperties/Oxygen");
-
-            //We'll be storing a real live tally or ActionSet in each of the templates. 
-            Tally tally;
-            //Real live tallies do require color coders, so we'll have some of those as well.
-            //Of course, for this, the colors don't matter. So we'll skip that bit.
-            ColorCoderLow lowGood = new ColorCoderLow();
-            ColorCoderHigh highGood = new ColorCoderHigh();
-            //For item-based tallies, we need a way to tell if a given inventory can accomodate our item. 
-            List<MyItemType> acceptedTypes = new List<MyItemType>();
-            Func<IMyInventory, MyItemType, bool> inventoryCanHold = (inv, it) =>
-            {
-                acceptedTypes.Clear();
-                inv.GetAcceptedItems(acceptedTypes);
-                return (acceptedTypes.Contains(it));
-            };
-
-            //Power
-            tally = new TallyGeneric(_meterMaid, "Power", new BatteryHandler(), highGood);
-            templates.Add(tally.programName, new TallyGenericTemplate(tally.programName, tally, b => b is IMyBatteryBlock));
-            //Hydrogen
-            tally = new TallyGeneric(_meterMaid, "Hydrogen", new GasHandler(), highGood);
-            templates.Add(tally.programName, new TallyGenericTemplate(tally.programName, tally, b => b is IMyGasTank &&
-                (b.Components.Get<MyResourceSinkComponent>()?.AcceptedResources.Contains(HYDROGEN_ID) ?? false)));
-            //Oxygen
-            tally = new TallyGeneric(_meterMaid, "Oxygen", new GasHandler(), highGood);
-            templates.Add(tally.programName, new TallyGenericTemplate(tally.programName, tally, b => b is IMyGasTank &&
-                (b.Components.Get<MyResourceSinkComponent>()?.AcceptedResources.Contains(OXYGEN_ID) ?? false)));
-            //Cargo
-            //To determine if an inventory can accommodate the cargo tally, we check to see if it can 
-            //hold both ice and uranium (Because we've already declared those, and because H2O2 gens
-            //are the only thing outside of generic cargo boxes that can hold ice)
-            tally = new TallyCargo(_meterMaid, "Cargo", lowGood);
-            templates.Add(tally.programName, new TallyInventoryTemplate(tally.programName, tally,
-                b => b is IMyCargoContainer, i => inventoryCanHold(i, ICE) && inventoryCanHold(i, URANIUM)));
-            //Ice
-            tally = new TallyItem(_meterMaid, "Ice", ICE, highGood);
-            tally.forceMax(4000);
-            templates.Add(tally.programName, new TallyInventoryTemplate(tally.programName, tally,
-                b => b is IMyGasGenerator, i => inventoryCanHold(i, ICE)));
-            //Stone
-            tally = new TallyItem(_meterMaid, "Stone", STONE, lowGood);
-            tally.forceMax(5000);
-            templates.Add(tally.programName, new TallyInventoryTemplate(tally.programName, tally,
-                b => b is IMyShipDrill || b is IMyRefinery, i => inventoryCanHold(i, STONE)));
-            //Ore
-            //For the Ore tally, we look for any inventory that can hold Iron ore.
-            tally = new TallyCargo(_meterMaid, "Ore", lowGood);
-            templates.Add(tally.programName, new TallyInventoryTemplate(tally.programName, tally,
-                b => b is IMyShipDrill || b is IMyRefinery, i => inventoryCanHold(i, IRON_ORE)));
-            //Uranium
-            tally = new TallyItem(_meterMaid, "Uranium", URANIUM, highGood);
-            tally.forceMax(50);
-            templates.Add(tally.programName, new TallyInventoryTemplate(tally.programName, tally,
-                b => b is IMyReactor, i => inventoryCanHold(i, URANIUM)));
-            //Solar
-            tally = new TallyGeneric(_meterMaid, "Solar", new PowerMaxHandler(), highGood);
-            tally.multiplier = 100;
-            templates.Add(tally.programName, new TallyGenericTemplate(tally.programName, tally, b => b is IMySolarPanel));
-            //JumpDrive
-            tally = new TallyGeneric(_meterMaid, "JumpDrive", new JumpDriveHandler(), highGood);
-            tally.displayName = "Jump Charge";
-            templates.Add(tally.programName, new TallyGenericTemplate(tally.programName, tally, b => b is IMyJumpDrive));
-
-            //After the warfare update, weapons no longer get a bespoke interface. So to tell them
-            //apart, we look to see what ammo types they can hold. And since AP only deals with base
-            //game ammo types, and all base game turrets only have one inventory, for the identification
-            //pass, we'll only check that.
-            //Note: All the indentification checks for ammo type first check to see if the block is
-            //an IMyUserControllableGun. It'd be nice if I could do that check once for all of them,
-            //but I think there are enough optimizations elsewhere in AP that it won't be a big deal.
-            Func<IMyTerminalBlock, MyItemType, bool> weaponIdentification = (b, i) =>
-            { return b is IMyUserControllableGun && inventoryCanHold(b.GetInventory(0), i); };
-
-            //GatlingAmmo
-            tally = new TallyItem(_meterMaid, "GatlingAmmo", GATLING_AMMO, highGood);
-            tally.forceMax(20);
-            tally.displayName = "Gatling\nDrums";
-            templates.Add(tally.programName, new TallyInventoryTemplate(tally.programName, tally,
-                b => weaponIdentification(b, GATLING_AMMO), i => inventoryCanHold(i, GATLING_AMMO)));
-            //AutocannonAmmo
-            tally = new TallyItem(_meterMaid, "AutocannonAmmo", AUTOCANNON_AMMO, highGood);
-            tally.forceMax(60);
-            tally.displayName = "Autocannon\nClips";
-            templates.Add(tally.programName, new TallyInventoryTemplate(tally.programName, tally,
-                b => weaponIdentification(b, AUTOCANNON_AMMO), i => inventoryCanHold(i, AUTOCANNON_AMMO)));
-            //AssaultAmmo
-            tally = new TallyItem(_meterMaid, "AssaultAmmo", ASSAULT_AMMO, highGood);
-            tally.forceMax(120);
-            tally.displayName = "Cannon\nShells";
-            templates.Add(tally.programName, new TallyInventoryTemplate(tally.programName, tally,
-                b => weaponIdentification(b, ASSAULT_AMMO), i => inventoryCanHold(i, ASSAULT_AMMO)));
-            //ArtilleryAmmo
-            tally = new TallyItem(_meterMaid, "ArtilleryAmmo", ARTILLERY_AMMO, highGood);
-            tally.forceMax(40);
-            tally.displayName = "Artillery\nShells";
-            templates.Add(tally.programName, new TallyInventoryTemplate(tally.programName, tally,
-                b => weaponIdentification(b, ARTILLERY_AMMO), i => inventoryCanHold(i, ARTILLERY_AMMO)));
-            //RailSmallAmmo
-            tally = new TallyItem(_meterMaid, "RailSmallAmmo", RAIL_SMALL_AMMO, highGood);
-            tally.forceMax(36);
-            tally.displayName = "Railgun\nS. Sabots";
-            templates.Add(tally.programName, new TallyInventoryTemplate(tally.programName, tally,
-                b => weaponIdentification(b, RAIL_SMALL_AMMO), i => inventoryCanHold(i, RAIL_SMALL_AMMO)));
-            //RailLargeAmmo
-            tally = new TallyItem(_meterMaid, "RailLargeAmmo", RAIL_LARGE_AMMO, highGood);
-            tally.forceMax(12);
-            tally.displayName = "Railgun\nL. Sabots";
-            templates.Add(tally.programName, new TallyInventoryTemplate(tally.programName, tally,
-                b => weaponIdentification(b, RAIL_LARGE_AMMO), i => inventoryCanHold(i, RAIL_LARGE_AMMO)));
-            //RocketAmmo
-            tally = new TallyItem(_meterMaid, "RocketAmmo", ROCKET_AMMO, highGood);
-            tally.forceMax(24);
-            tally.displayName = "Rockets";
-            templates.Add(tally.programName, new TallyInventoryTemplate(tally.programName, tally,
-                b => weaponIdentification(b, ROCKET_AMMO), i => inventoryCanHold(i, ROCKET_AMMO)));
-
-            //On to the ActionSets.
-            ActionSet actionSet;
-            //In addition to the config that goes on the PB, each block in an ActionSet needs 
-            //instructions on what exactly the set is supposed to do with the block. This writer will
-            //write config we'll need for the vast majority of those blocks.
-            Action<MyIni, string, string, string> writeDiscreteSection = (ini, sec, on, off) =>
-            {
-                ini.Set(sec, "ActionOn", on);
-                ini.Set(sec, "ActionOff", off);
-            };
-            //When we just want to turn something off, we'll use this
-            //And if we run into an antenna, we'll need this.
-            Action<MyIni, string, string, string> writeAntennaSection = (ini, sec, on, off) =>
-            {
-                ini.Set(sec, "Action0Property", "Radius");
-                ini.Set(sec, "Action0ValueOn", "1500");
-                ini.Set(sec, "Action0ValueOff", "150");
-
-                ini.Set(sec, "Action1Property", "HudText");
-                ini.Set(sec, "Action1ValueOn", on);
-                ini.Set(sec, "Action1ValueOff", off);
-            };
-            //Antennas
-            //ActionSets require a name and an initial state. But in this case, the initial state 
-            //won't do anything. So we'll just pass it false.
-            actionSet = new ActionSet("Antennas", false);
-            actionSet.displayName = "Antenna Range";
-            actionSet.textOn = "Broad";
-            actionSet.textOff = "Wifi";
-            actionSet.colorOff = yellow;
-            templates.Add(actionSet.programName, new ActionSetTemplate(actionSet.programName, actionSet, b => b is IMyRadioAntenna,
-                $"{_SCRIPT_PREFIX}.{actionSet.programName}", $"{_customID}", $"{_customID} Wifi", writeAntennaSection, "Off", "On"));
-            //Beacons
-            actionSet = new ActionSet("Beacons", false);
-            actionSet.displayName = "Beacon";
-            actionSet.textOn = "Online";
-            actionSet.textOff = "Offline";
-            templates.Add(actionSet.programName, new ActionSetTemplate(actionSet.programName, actionSet, b => b is IMyBeacon,
-                $"{_SCRIPT_PREFIX}.{actionSet.programName}", "EnableOn", "EnableOff", writeDiscreteSection, "Off", "On"));
-            //Spotlights
-            actionSet = new ActionSet("Spotlights", false);
-            actionSet.textOn = "Online";
-            actionSet.textOff = "Offline";
-            templates.Add(actionSet.programName, new ActionSetTemplate(actionSet.programName, actionSet, b => b is IMyReflectorLight,
-                $"{_SCRIPT_PREFIX}.{actionSet.programName}", "EnableOn", "EnableOff", writeDiscreteSection, "Off", ""));
-            //OreDetectors
-            actionSet = new ActionSet("OreDetectors", false);
-            actionSet.displayName = "Ore Detector";
-            actionSet.textOn = "Scanning";
-            actionSet.textOff = "Idle";
-            templates.Add(actionSet.programName, new ActionSetTemplate(actionSet.programName, actionSet, b => b is IMyOreDetector,
-                $"{_SCRIPT_PREFIX}.{actionSet.programName}", "EnableOn", "EnableOff", writeDiscreteSection, "Off", "On"));
-            //Batteries
-            actionSet = new ActionSet("Batteries", false);
-            actionSet.textOn = "On Auto";
-            actionSet.textOff = "Recharging";
-            actionSet.colorOff = yellow;
-            templates.Add(actionSet.programName, new ActionSetTemplate(actionSet.programName, actionSet, b => b is IMyBatteryBlock,
-                $"{_SCRIPT_PREFIX}.{actionSet.programName}", "BatteryAuto", "BatteryRecharge", writeDiscreteSection, "Off", "On"));
-            //Reactors
-            actionSet = new ActionSet("Reactors", false);
-            actionSet.textOn = "Active";
-            actionSet.textOff = "Inactive";
-            templates.Add(actionSet.programName, new ActionSetTemplate(actionSet.programName, actionSet, b => b is IMyReactor,
-                $"{_SCRIPT_PREFIX}.{actionSet.programName}", "EnableOn", "EnableOff", writeDiscreteSection, "Off", ""));
-            //EnginesHydrogen
-            actionSet = new ActionSet("EnginesHydrogen", false);
-            actionSet.displayName = "Engines";
-            actionSet.textOn = "Running";
-            actionSet.textOff = "Idle";
-            //Hydrogen engines don't have a bespoke interface, and they're just difficult all around. 
-            //But we want to be able to find them, so we look for power producers that consume hydrogen.
-            templates.Add(actionSet.programName, new ActionSetTemplate(actionSet.programName, actionSet, b => b is IMyPowerProducer &&
-                (b.Components.Get<MyResourceSinkComponent>()?.AcceptedResources.Contains(HYDROGEN_ID) ?? false),
-                $"{_SCRIPT_PREFIX}.{actionSet.programName}", "EnableOn", "EnableOff", writeDiscreteSection, "Off", ""));
-            //TanksHydrogen
-            actionSet = new ActionSet("TanksHydrogen", false);
-            actionSet.displayName = "Hydrogen\nTanks";
-            actionSet.textOn = "Open";
-            actionSet.textOff = "Filling";
-            actionSet.colorOff = lightBlue;
-            templates.Add(actionSet.programName, new ActionSetTemplate(actionSet.programName, actionSet, b => b is IMyGasTank &&
-                (b.Components.Get<MyResourceSinkComponent>()?.AcceptedResources.Contains(HYDROGEN_ID) ?? false),
-                $"{_SCRIPT_PREFIX}.{actionSet.programName}", "TankStockpileOff", "TankStockpileOn", writeDiscreteSection, "Off", "On"));
-            //TanksOxygen
-            actionSet = new ActionSet("TanksOxygen", false);
-            actionSet.displayName = "Oxygen\nTanks";
-            actionSet.textOn = "Open";
-            actionSet.textOff = "Filling";
-            actionSet.colorOff = lightBlue;
-            templates.Add(actionSet.programName, new ActionSetTemplate(actionSet.programName, actionSet, b => b is IMyGasTank &&
-                (b.Components.Get<MyResourceSinkComponent>()?.AcceptedResources.Contains(OXYGEN_ID) ?? false),
-                $"{_SCRIPT_PREFIX}.{actionSet.programName}", "TankStockpileOff", "TankStockpileOn", writeDiscreteSection, "Off", "On"));
-            //Gyros
-            actionSet = new ActionSet("Gyroscopes", false);
-            actionSet.displayName = "Gyros";
-            actionSet.textOn = "Active";
-            actionSet.textOff = "Inactive";
-            templates.Add(actionSet.programName, new ActionSetTemplate(actionSet.programName, actionSet, b => b is IMyGyro,
-                $"{_SCRIPT_PREFIX}.{actionSet.programName}", "EnableOn", "EnableOff", writeDiscreteSection, "Off", "On"));
-            //ThrustersElectric
-            actionSet = new ActionSet("ThrustersElectric", false);
-            actionSet.displayName = "Electric\nThrusters";
-            actionSet.textOn = "Online";
-            actionSet.textOff = "Offline";
-            //Thrusters are also difficult, because we don't really have a way to tell them apart 
-            //(Outside of the IDs), and there's apparently no way to tell ion and atmo thrusters
-            //apart without some form of string parsing. So instead, we'll put those two in the same
-            //group, and define that group as, 'thrusters that don't use hydrogen'
-            templates.Add(actionSet.programName, new ActionSetTemplate(actionSet.programName, actionSet, b => b is IMyThrust &&
-                !(b.Components.Get<MyResourceSinkComponent>()?.AcceptedResources.Contains(HYDROGEN_ID) ?? false),
-                $"{_SCRIPT_PREFIX}.{actionSet.programName}", "EnableOn", "EnableOff", writeDiscreteSection, "Off", "On"));
-            //ThrustersHydrogen
-            actionSet = new ActionSet("ThrustersHydrogen", false);
-            actionSet.displayName = "Hydrogen\nThrusters";
-            actionSet.textOn = "Online";
-            actionSet.textOff = "Offline";
-            templates.Add(actionSet.programName, new ActionSetTemplate(actionSet.programName, actionSet, b => b is IMyThrust &&
-                (b.Components.Get<MyResourceSinkComponent>()?.AcceptedResources.Contains(HYDROGEN_ID) ?? false),
-                $"{_SCRIPT_PREFIX}.{actionSet.programName}", "EnableOn", "EnableOff", writeDiscreteSection, "Off", "On"));
-
-            //From a performance standpoint, the best way to filter out excluded templates would be 
-            //to put an if check on the creation of each template that keeps the code from executing
-            //at all. But from a code maintainence (And character count) standpoint, it's better to
-            //have it all in this loop.
-            //Besides, this lets us easily do some error checking and reporting.
-            if (excludedDeclarations != null)
-            {
-                int i = 0;
-                string exclusion;
-                while (i < excludedDeclarations.Count)
-                {
-                    exclusion = excludedDeclarations[i];
-                    if (templates.ContainsKey(exclusion))
-                    {
-                        templates.Remove(exclusion);
-                        excludedDeclarations.RemoveAt(i);
-                    }
-                    else
-                    //If we can't match the exclusion to a key in the dictionary, we'll hold on to
-                    //it so we can complain about it later.
-                    { i++; }
-                }
-                if (i > 0)
-                {
-                    string orphanedExclusions = "";
-                    foreach (string orphan in excludedDeclarations)
-                    { orphanedExclusions += $"{orphan}, "; }
-                    orphanedExclusions = orphanedExclusions.Remove(orphanedExclusions.Length - 2);
-
-                    apLog.addWarning("The following entries from APExcludedDeclarations could not " +
-                        $"be matched to declarations: {orphanedExclusions}. Remember that they are " +
-                        $"case sensitive.");
-                }
-            }
-            return templates;
-        }*/
-
-        //This version of compileAPTemplates was going to be purely list based... until I discovered
-        //that I need a dictionary for its handling of the exludedDeclarations list (20240705).
-        /*public List<APTemplate> compileAPTemplates(List<string> excludedDeclarations, LimitedMessageLog apLog)
-        {
-            List<APTemplate> templates = new List<APTemplate>();
-
-            //APTally types: Power, Hydrogen, Oxygen, Cargo, Ice, Stone, Ore, Uranium, Solar,
-            //  JumpDrives, Gatling, Autocannon, Assault, Artillery, RailSmall, RailLarge, Rocket
-            //Roost?
-            //APSet types: Antenna, Batteries, Reactors, HyGens, TanksHydrogen, TanksOxygen, Gyros,
-            //  ThrustersAtmospheric, ThrustersHydrogen, ThrustersIon
-            //  RedLight? Beacon? OreDetector? Spotlights?
-
-            const string ORE_TYPE = "MyObjectBuilder_Ore";
-            const string INGOT_TYPE = "MyObjectBuilder_Ingot";
-            //I may need this one day. May as well leave it here.
-            //const string COMP_TYPE = "MyObjectBuilder_Component";
-            const string AMMO_TYPE = "MyObjectBuilder_AmmoMagazine";
-            MyItemType ICE = new MyItemType(ORE_TYPE, "Ice");
-            MyItemType STONE = new MyItemType(ORE_TYPE, "Stone");
-            MyItemType IRON_ORE = new MyItemType(ORE_TYPE, "Iron");
-            MyItemType URANIUM = new MyItemType(INGOT_TYPE, "Uranium");
-            MyItemType GATLING_AMMO = new MyItemType(AMMO_TYPE, "NATO_25x184mm");
-            MyItemType AUTOCANNON_AMMO = new MyItemType(AMMO_TYPE, "AutocannonClip");
-            MyItemType ASSAULT_AMMO = new MyItemType(AMMO_TYPE, "MediumCalibreAmmo");
-            MyItemType ARTILLERY_AMMO = new MyItemType(AMMO_TYPE, "LargeCalibreAmmo");
-            MyItemType RAIL_SMALL_AMMO = new MyItemType(AMMO_TYPE, "SmallRailgunAmmo");
-            MyItemType RAIL_LARGE_AMMO = new MyItemType(AMMO_TYPE, "LargeRailgunAmmo");
-            MyItemType ROCKET_AMMO = new MyItemType(AMMO_TYPE, "Missile200mm");
-            //These will be needed to identify tank types.
-            MyDefinitionId HYDROGEN_ID = MyDefinitionId.Parse("MyObjectBuilder_GasProperties/Hydrogen");
-            MyDefinitionId OXYGEN_ID = MyDefinitionId.Parse("MyObjectBuilder_GasProperties/Oxygen");
-
-            //We'll be storing a real live tally or ActionSet in each of the templates. 
-            Tally tally;
-            //Real live tallies do require color coders, so we'll have some of those as well.
-            //Of course, for this, the colors don't matter. So we'll skip that bit.
-            ColorCoderLow lowGood = new ColorCoderLow();
-            ColorCoderHigh highGood = new ColorCoderHigh();
-            //For item-based tallies, we need a way to tell if a given inventory can accomodate our item. 
-            List<MyItemType> acceptedTypes = new List<MyItemType>();
-            Func<IMyInventory, MyItemType, bool> inventoryCanHold = (inv, it) =>
-            {
-                acceptedTypes.Clear();
-                inv.GetAcceptedItems(acceptedTypes);
-                return (acceptedTypes.Contains(it));
-            };
-
-            //Power
-            tally = new TallyGeneric(_meterMaid, "Power", new BatteryHandler(), highGood);
-            templates.Add(new TallyGenericTemplate(tally.programName, tally, b => b is IMyBatteryBlock));
-            //Hydrogen
-            tally = new TallyGeneric(_meterMaid, "Hydrogen", new GasHandler(), highGood);
-            templates.Add(new TallyGenericTemplate(tally.programName, tally, b => b is IMyGasTank &&
-                (b.Components.Get<MyResourceSinkComponent>()?.AcceptedResources.Contains(HYDROGEN_ID) ?? false)));
-            //Oxygen
-            tally = new TallyGeneric(_meterMaid, "Oxygen", new GasHandler(), highGood);
-            templates.Add(new TallyGenericTemplate(tally.programName, tally, b => b is IMyGasTank &&
-                (b.Components.Get<MyResourceSinkComponent>()?.AcceptedResources.Contains(OXYGEN_ID) ?? false)));
-            //Cargo
-            //To determine if an inventory can accommodate the cargo tally, we check to see if it can 
-            //hold both ice and uranium (Because we've already declared those, and because H2O2 gens
-            //are the only thing outside of generic cargo boxes that can hold ice)
-            tally = new TallyCargo(_meterMaid, "Cargo", lowGood);
-            templates.Add(new TallyInventoryTemplate(tally.programName, tally, b => b is IMyCargoContainer, 
-                i => inventoryCanHold(i, ICE) && inventoryCanHold(i, URANIUM)));
-            //Ice
-            tally = new TallyItem(_meterMaid, "Ice", ICE, highGood);
-            tally.forceMax(4000);
-            templates.Add(new TallyInventoryTemplate(tally.programName, tally, b => b is IMyGasGenerator, 
-                i => inventoryCanHold(i, ICE)));
-            //Stone
-            tally = new TallyItem(_meterMaid, "Stone", STONE, lowGood);
-            tally.forceMax(5000);
-            templates.Add(new TallyInventoryTemplate(tally.programName, tally, b => b is IMyShipDrill || b is IMyRefinery, 
-                i => inventoryCanHold(i, STONE)));
-            //Ore
-            //For the Ore tally, we look for any inventory that can hold Iron ore.
-            tally = new TallyCargo(_meterMaid, "Ore", lowGood);
-            templates.Add(new TallyInventoryTemplate(tally.programName, tally, b => b is IMyShipDrill || b is IMyRefinery, 
-                i => inventoryCanHold(i, IRON_ORE)));
-            //Uranium
-            tally = new TallyItem(_meterMaid, "Uranium", URANIUM, highGood);
-            tally.forceMax(50);
-            templates.Add(new TallyInventoryTemplate(tally.programName, tally, b => b is IMyReactor, 
-                i => inventoryCanHold(i, URANIUM)));
-            //Solar
-            tally = new TallyGeneric(_meterMaid, "Solar", new PowerMaxHandler(), highGood);
-            tally.multiplier = 100;
-            templates.Add(new TallyGenericTemplate(tally.programName, tally, b => b is IMySolarPanel));
-            //JumpDrive
-            tally = new TallyGeneric(_meterMaid, "JumpDrive", new JumpDriveHandler(), highGood);
-            tally.displayName = "Jump Charge";
-            templates.Add(new TallyGenericTemplate(tally.programName, tally, b => b is IMyJumpDrive));
-
-            //After the warfare update, weapons no longer get a bespoke interface. So to tell them
-            //apart, we look to see what ammo types they can hold. And since AP only deals with base
-            //game ammo types, and all base game turrets only have one inventory, for the identification
-            //pass, we'll only check that.
-            //Note: All the indentification checks for ammo type first check to see if the block is
-            //an IMyUserControllableGun. It'd be nice if I could do that check once for all of them,
-            //but I think there are enough optimizations elsewhere in AP that it won't be a big deal.
-            Func<IMyTerminalBlock, MyItemType, bool> weaponIdentification = (b, i) =>
-            { return b is IMyUserControllableGun && inventoryCanHold(b.GetInventory(0), i); };
-
-            //GatlingAmmo
-            tally = new TallyItem(_meterMaid, "GatlingAmmo", GATLING_AMMO, highGood);
-            tally.forceMax(20);
-            tally.displayName = "Gatling\nDrums";
-            templates.Add(new TallyInventoryTemplate(tally.programName, tally,
-                b => weaponIdentification(b, GATLING_AMMO), i => inventoryCanHold(i, GATLING_AMMO)));
-            //AutocannonAmmo
-            tally = new TallyItem(_meterMaid, "AutocannonAmmo", AUTOCANNON_AMMO, highGood);
-            tally.forceMax(60);
-            tally.displayName = "Autocannon\nClips";
-            templates.Add(new TallyInventoryTemplate(tally.programName, tally,
-                b => weaponIdentification(b, AUTOCANNON_AMMO), i => inventoryCanHold(i, AUTOCANNON_AMMO)));
-            //AssaultAmmo
-            tally = new TallyItem(_meterMaid, "AssaultAmmo", ASSAULT_AMMO, highGood);
-            tally.forceMax(120);
-            tally.displayName = "Cannon\nShells";
-            templates.Add(new TallyInventoryTemplate(tally.programName, tally,
-                b => weaponIdentification(b, ASSAULT_AMMO), i => inventoryCanHold(i, ASSAULT_AMMO)));
-            //ArtilleryAmmo
-            tally = new TallyItem(_meterMaid, "ArtilleryAmmo", ARTILLERY_AMMO, highGood);
-            tally.forceMax(40);
-            tally.displayName = "Artillery\nShells";
-            templates.Add(new TallyInventoryTemplate(tally.programName, tally,
-                b => weaponIdentification(b, ARTILLERY_AMMO), i => inventoryCanHold(i, ARTILLERY_AMMO)));
-            //RailSmallAmmo
-            tally = new TallyItem(_meterMaid, "RailSmallAmmo", RAIL_SMALL_AMMO, highGood);
-            tally.forceMax(36);
-            tally.displayName = "Railgun\nS. Sabots";
-            templates.Add(new TallyInventoryTemplate(tally.programName, tally,
-                b => weaponIdentification(b, RAIL_SMALL_AMMO), i => inventoryCanHold(i, RAIL_SMALL_AMMO)));
-            //RailLargeAmmo
-            tally = new TallyItem(_meterMaid, "RailLargeAmmo", RAIL_LARGE_AMMO, highGood);
-            tally.forceMax(12);
-            tally.displayName = "Railgun\nL. Sabots";
-            templates.Add(new TallyInventoryTemplate(tally.programName, tally,
-                b => weaponIdentification(b, RAIL_LARGE_AMMO), i => inventoryCanHold(i, RAIL_LARGE_AMMO)));
-            //RocketAmmo
-            tally = new TallyItem(_meterMaid, "RocketAmmo", ROCKET_AMMO, highGood);
-            tally.forceMax(24);
-            tally.displayName = "Rockets";
-            templates.Add(new TallyInventoryTemplate(tally.programName, tally,
-                b => weaponIdentification(b, ROCKET_AMMO), i => inventoryCanHold(i, ROCKET_AMMO)));
-
-            //On to the ActionSets.
-            ActionSet actionSet;
-            //In addition to the config that goes on the PB, each block in an ActionSet needs 
-            //instructions on what exactly the set is supposed to do with the block. This writer will
-            //write config we'll need for the vast majority of those blocks.
-            Action<MyIni, string, string, string> writeDiscreteSection = (ini, sec, on, off) =>
-            {
-                ini.Set(sec, "ActionOn", on);
-                ini.Set(sec, "ActionOff", off);
-            };
-            //And if we run into an antenna, we'll need this.
-            Action<MyIni, string, string, string> writeAntennaSection = (ini, sec, on, off) =>
-            {
-                ini.Set(sec, "Action0Property", "Radius");
-                ini.Set(sec, "Action0ValueOn", "1500");
-                ini.Set(sec, "Action0ValueOff", "150");
-
-                ini.Set(sec, "Action1Property", "HudText");
-                ini.Set(sec, "Action1ValueOn", on);
-                ini.Set(sec, "Action1ValueOff", off);
-            };
-            //Antennas
-            //ActionSets require a name and an initial state. But in this case, the initial state 
-            //won't do anything. So we'll just pass it false.
-            actionSet = new ActionSet("Antennas", false);
-            actionSet.displayName = "Antenna Range";
-            actionSet.textOn = "Broad";
-            actionSet.textOff = "Wifi";
-            actionSet.colorOff = yellow;
-            templates.Add(new ActionSetTemplate(actionSet.programName, actionSet, b => b is IMyRadioAntenna,
-                $"{_SCRIPT_PREFIX}.{actionSet.programName}", $"{_customID}", $"{_customID} Wifi", writeAntennaSection, "Off", "On"));
-            //Beacons
-            actionSet = new ActionSet("Beacons", false);
-            actionSet.displayName = "Beacon";
-            actionSet.textOn = "Online";
-            actionSet.textOff = "Offline";
-            templates.Add(new ActionSetTemplate(actionSet.programName, actionSet, b => b is IMyBeacon,
-                $"{_SCRIPT_PREFIX}.{actionSet.programName}", "EnableOn", "EnableOff", writeDiscreteSection, "Off", "On"));
-            //Spotlights
-            actionSet = new ActionSet("Spotlights", false);
-            actionSet.textOn = "Online";
-            actionSet.textOff = "Offline";
-            templates.Add(new ActionSetTemplate(actionSet.programName, actionSet, b => b is IMyReflectorLight,
-                $"{_SCRIPT_PREFIX}.{actionSet.programName}", "EnableOn", "EnableOff", writeDiscreteSection, "Off", ""));
-            //OreDetectors
-            actionSet = new ActionSet("OreDetectors", false);
-            actionSet.displayName = "Ore Detector";
-            actionSet.textOn = "Scanning";
-            actionSet.textOff = "Idle";
-            templates.Add(new ActionSetTemplate(actionSet.programName, actionSet, b => b is IMyOreDetector,
-                $"{_SCRIPT_PREFIX}.{actionSet.programName}", "EnableOn", "EnableOff", writeDiscreteSection, "Off", "On"));
-            //Batteries
-            actionSet = new ActionSet("Batteries", false);
-            actionSet.textOn = "On Auto";
-            actionSet.textOff = "Recharging";
-            actionSet.colorOff = yellow;
-            templates.Add(new ActionSetTemplate(actionSet.programName, actionSet, b => b is IMyBatteryBlock,
-                $"{_SCRIPT_PREFIX}.{actionSet.programName}", "BatteryAuto", "BatteryRecharge", writeDiscreteSection, "Off", "On"));
-            //Reactors
-            actionSet = new ActionSet("Reactors", false);
-            actionSet.textOn = "Active";
-            actionSet.textOff = "Inactive";
-            templates.Add(new ActionSetTemplate(actionSet.programName, actionSet, b => b is IMyReactor,
-                $"{_SCRIPT_PREFIX}.{actionSet.programName}", "EnableOn", "EnableOff", writeDiscreteSection, "Off", ""));
-            //EnginesHydrogen
-            actionSet = new ActionSet("EnginesHydrogen", false);
-            actionSet.displayName = "Engines";
-            actionSet.textOn = "Running";
-            actionSet.textOff = "Idle";
-            //Hydrogen engines don't have a bespoke interface, and they're just difficult all around. 
-            //But we want to be able to find them, so we look for power producers that consume hydrogen.
-            templates.Add(new ActionSetTemplate(actionSet.programName, actionSet, b => b is IMyPowerProducer &&
-                (b.Components.Get<MyResourceSinkComponent>()?.AcceptedResources.Contains(HYDROGEN_ID) ?? false),
-                $"{_SCRIPT_PREFIX}.{actionSet.programName}", "EnableOn", "EnableOff", writeDiscreteSection, "Off", ""));
-            //TanksHydrogen
-            actionSet = new ActionSet("TanksHydrogen", false);
-            actionSet.displayName = "Hydrogen\nTanks";
-            actionSet.textOn = "Open";
-            actionSet.textOff = "Filling";
-            actionSet.colorOff = lightBlue;
-            templates.Add(new ActionSetTemplate(actionSet.programName, actionSet, b => b is IMyGasTank &&
-                (b.Components.Get<MyResourceSinkComponent>()?.AcceptedResources.Contains(HYDROGEN_ID) ?? false),
-                $"{_SCRIPT_PREFIX}.{actionSet.programName}", "TankStockpileOff", "TankStockpileOn", writeDiscreteSection, "Off", "On"));
-            //TanksOxygen
-            actionSet = new ActionSet("TanksOxygen", false);
-            actionSet.displayName = "Oxygen\nTanks";
-            actionSet.textOn = "Open";
-            actionSet.textOff = "Filling";
-            actionSet.colorOff = lightBlue;
-            templates.Add(new ActionSetTemplate(actionSet.programName, actionSet, b => b is IMyGasTank &&
-                (b.Components.Get<MyResourceSinkComponent>()?.AcceptedResources.Contains(OXYGEN_ID) ?? false),
-                $"{_SCRIPT_PREFIX}.{actionSet.programName}", "TankStockpileOff", "TankStockpileOn", writeDiscreteSection, "Off", "On"));
-            //Gyros
-            actionSet = new ActionSet("Gyroscopes", false);
-            actionSet.displayName = "Gyros";
-            actionSet.textOn = "Active";
-            actionSet.textOff = "Inactive";
-            templates.Add(new ActionSetTemplate(actionSet.programName, actionSet, b => b is IMyGyro,
-                $"{_SCRIPT_PREFIX}.{actionSet.programName}", "EnableOn", "EnableOff", writeDiscreteSection, "Off", "On"));
-            //ThrustersElectric
-            actionSet = new ActionSet("ThrustersElectric", false);
-            actionSet.displayName = "Electric\nThrusters";
-            actionSet.textOn = "Online";
-            actionSet.textOff = "Offline";
-            //Thrusters are also difficult, because we don't really have a way to tell them apart 
-            //(Outside of the IDs), and there's apparently no way to tell ion and atmo thrusters
-            //apart without some form of string parsing. So instead, we'll put those two in the same
-            //group, and define that group as, 'thrusters that don't use hydrogen'
-            templates.Add(new ActionSetTemplate(actionSet.programName, actionSet, b => b is IMyThrust &&
-                !(b.Components.Get<MyResourceSinkComponent>()?.AcceptedResources.Contains(HYDROGEN_ID) ?? false),
-                $"{_SCRIPT_PREFIX}.{actionSet.programName}", "EnableOn", "EnableOff", writeDiscreteSection, "Off", "On"));
-            //ThrustersHydrogen
-            actionSet = new ActionSet("ThrustersHydrogen", false);
-            actionSet.displayName = "Hydrogen\nThrusters";
-            actionSet.textOn = "Online";
-            actionSet.textOff = "Offline";
-            templates.Add(new ActionSetTemplate(actionSet.programName, actionSet, b => b is IMyThrust &&
-                (b.Components.Get<MyResourceSinkComponent>()?.AcceptedResources.Contains(HYDROGEN_ID) ?? false),
-                $"{_SCRIPT_PREFIX}.{actionSet.programName}", "EnableOn", "EnableOff", writeDiscreteSection, "Off", "On"));
-
-            //From a performance standpoint, the best way to filter out excluded templates would be 
-            //to put an if check on the creation of each template that keeps the code from executing
-            //at all. But from a code maintainence (And character count) standpoint, it's better to
-            //have it all in this loop.
-            //Besides, this lets us easily do some error checking and reporting.
-            if (excludedDeclarations != null)
-            {
-                int i = 0;
-                string exclusion;
-                while (i < excludedDeclarations.Count)
-                {
-                    exclusion = excludedDeclarations[i];
-                    if (templates.ContainsKey(exclusion))
-                    {
-                        templates.Remove(exclusion);
-                        excludedDeclarations.RemoveAt(i);
-                    }
-                    else
-                    //If we can't match the exclusion to a key in the dictionary, we'll hold on to
-                    //it so we can complain about it later.
-                    { i++; }
-                }
-                if (i > 0)
-                {
-                    string orphanedExclusions = "";
-                    foreach (string orphan in excludedDeclarations)
-                    { orphanedExclusions += $"{orphan}, "; }
-                    orphanedExclusions = orphanedExclusions.Remove(orphanedExclusions.Length - 2);
-
-                    apLog.addWarning("The following entries from APExcludedDeclarations could not " +
-                        $"be matched to declarations: {orphanedExclusions}. Remember that they are " +
-                        $"case sensitive.");
-                }
-            }
-            return templates;
-        } */
 
         //The current version of compileAPTemplates, which uses a dictionary throughout but then
         //trims that down to a list for AP's use.
@@ -2877,6 +2471,13 @@ namespace IngameScript
             templates.Add(actionSet.programName, new ActionSetTemplate(actionSet.programName, actionSet, b => b is IMyPowerProducer &&
                 (b.Components.Get<MyResourceSinkComponent>()?.AcceptedResources.Contains(HYDROGEN_ID) ?? false),
                 $"{_SCRIPT_PREFIX}.{actionSet.programName}", "EnableOn", "EnableOff", writeDiscreteSection, "Off", ""));
+            //h2/02 generators, AKA IceCrackers
+            actionSet = new ActionSet("IceCrackers", false);
+            actionSet.displayName = "Ice Crackers";
+            actionSet.textOn = "Running";
+            actionSet.textOff = "Idle";
+            templates.Add(actionSet.programName, new ActionSetTemplate(actionSet.programName, actionSet, b => b is IMyGasGenerator,
+                $"{_SCRIPT_PREFIX}.{actionSet.programName}", "EnableOn", "EnableOff", writeDiscreteSection, "", ""));
             //TanksHydrogen
             actionSet = new ActionSet("TanksHydrogen", false);
             actionSet.displayName = "Hydrogen\nTanks";
@@ -3094,6 +2695,7 @@ namespace IngameScript
             //FAT: This method could likely be refactored to share common code.
             //Also, I don't acutally use it anymore because I've switched to a more string-based
             //solution
+            /*
             internal void loadPlansIntoRoostSet(ref ActionSet roostSet)
             {
                 ActionPlanActionSet plan = null;
@@ -3115,7 +2717,7 @@ namespace IngameScript
                     { plan.setReactionToOff(false); }
                     roostSet.addActionPlan(plan);
                 }
-            }
+            }*/
 
             //Arguably, this should be moved to APBlockConfig, given that's what writes config for blocks.
             public void writeDiscreteEntry(MyIni blockParse)
@@ -3186,10 +2788,10 @@ namespace IngameScript
                 { createNewConfigEntry(key, link, true); }
             }
 
-            public void writeConfigToIni(string section, MyIni ini)
+            public void writeConfigToIni(string section, MyIni ini, bool forceWrite = false)
             {
                 foreach (KeyValuePair<string, APConfigEntry> pair in config)
-                { pair.Value.writeEntryToIni(ini, section, pair.Key); }
+                { pair.Value.writeEntryToIni(ini, section, pair.Key, forceWrite); }
                 //If we've been holding on to a template, tell it to write its discrete section. 
                 if (template != null)
                 { template.writeDiscreteEntry(ini); }
@@ -3218,10 +2820,10 @@ namespace IngameScript
             }
 
             //Overwrites an ini entry at the designated section and key, but only if this entry has
-            //been modified.
-            public void writeEntryToIni(MyIni ini, string section, string key)
+            //been modified (Or we're explicitly telling it to)
+            public void writeEntryToIni(MyIni ini, string section, string key, bool forceWrite)
             {
-                if (isModified)
+                if (isModified || forceWrite)
                 { ini.Set(section, key, links); }
             }
         }
@@ -3259,8 +2861,12 @@ namespace IngameScript
             //we can't read it, so we simply assume that it parsed correctly
             _iniRead.TryParse(Storage);
 
-            //Now that we have that, we'll go ahead and set the update delay to whatever we had stored
-            _distributor.setDelay(_iniRead.Get("Data", "UpdateDelay").ToInt32(0));
+            //Now that we have that, we'll go ahead and get whatever update delay we had stored
+            //_distributor.setDelay(_iniRead.Get("Data", "UpdateDelay").ToInt32(0));
+            int updateDelay = _iniRead.Get("Data", "UpdateDelay").ToInt32(0);
+            //We'll get the refreshFrequency during EvaluateInit, but we won't actually use i until
+            //the end of this method.
+            int refreshFrequency = -1;
 
             //Parse the PB's custom data. If it checks out, we can proceed.
             if (!_iniReadWrite.TryParse(Me.CustomData, out parseResult))
@@ -3272,7 +2878,7 @@ namespace IngameScript
             else
             {
                 //_debugDisplay.WriteText("Entering evaluateInit\n", true);
-                evaluateInit(colorPalette, textLog, iniValue);
+                evaluateInit(colorPalette, textLog, iniValue, out refreshFrequency);
                 //_debugDisplay.WriteText("Entering evaluateDeclarations\n", true);
                 evaluateDeclarations(Me, textLog, colorPalette, evalTallies, evalSets, evalTriggers,
                     evalRaycasters, usedElementNames, parseResult, iniValue);
@@ -3370,6 +2976,38 @@ namespace IngameScript
                 //{ reportable.setProfile(); }
                 //_debugDisplay.WriteText("Finished setProfile calls\n", true);
 
+                //We need to clear up a few peristant bits that may or may not be coming over from
+                //the previous script instance. First, any leftover state machines
+                _activeMachine?.end();
+                _activeMachine = null;
+                _scheduledMachines.Clear();
+                //We won't mess with Update10. At the end of this, we're setting Update100, which
+                //will do the job for us.
+
+                //One of the last things we need to do is set up the Distributor.
+                _distributor.clearPeriodics();
+                setUpdateDelay(updateDelay);
+                //A value of -1 indicates the sprite refresher is disabled
+                if (refreshFrequency > -1)
+                {
+                    //We don't let the user set the refresh frequency lower than 10.
+                    if (refreshFrequency < 10)
+                    {
+                        textLog.addWarning($"{_SCRIPT_PREFIX}.Init, key 'MPSpriteSyncFrequency' " +
+                            $"requested an invalid frequncy of {refreshFrequency}. Sync frequency has " +
+                            $"been set to the lowest allowed value of 10 instead.");
+                        refreshFrequency = 10;
+                    }
+                    Action refreshAction = () =>
+                    {
+                        tryScheduleMachine(new SpriteRefreshMachine(this, _reports, false));
+                        //DEBUG USE
+                        //_log.add("Sprite refresh scheduled.");
+                    };
+                    PeriodicEvent refreshEvent = new PeriodicEvent(refreshFrequency, refreshAction);
+                    _distributor.addOrReplacePeriodic("SpriteRefresher", refreshEvent);
+                }
+
                 //Record this occasion for posterity
                 _haveGoodConfig = true;
                 _lastGoodConfigStamp = DateTime.Now;
@@ -3448,7 +3086,9 @@ namespace IngameScript
                 */
         }
 
-        internal void evaluateInit(PaletteManager colorPalette, LimitedMessageLog textLog, MyIniValue iniValue)
+        //Assumes the PB's CustomData has been loaded into _iniReadWrite
+        internal void evaluateInit(PaletteManager colorPalette, LimitedMessageLog textLog,
+            MyIniValue iniValue, out int refreshFrequency)
         {
             ensureInitHasRequiredKeys(textLog);
 
@@ -3492,6 +3132,10 @@ namespace IngameScript
             //It also might not be working. When I tested it, the color seemed a lot like a blue even
             //though we should've been retrieving a red.
             //textLog.errorColor = color;
+
+            //The other thing we need to read from Init is the refresh frequency. But we'll just hand
+            //that off to the main method
+            refreshFrequency = _iniReadWrite.Get(initTag, "MPSpriteSyncFrequency").ToInt32(-1);
         }
 
         //assume that _iniRead has been loaded with a parse from the Save string and that _iniReadWrite
@@ -3566,7 +3210,7 @@ namespace IngameScript
                         //Our next steps are going to be dictated by the TallyType. We should try and 
                         //figure out what that is.
                         tallyType = _iniReadWrite.Get(sectionHeader, "Type").ToString().ToLowerInvariant();
-                        if (string.IsNullOrEmpty(tallyType))
+                        if (isEmptyString(tallyType))
                         { textLog.addError($"{declarationType} {declarationName} has a missing or unreadable Type."); }
                         //Now, we create a tally based on the type. For the TallyCargo, that's quite straightforward.
                         else if (tallyType == "inventory")
@@ -3578,13 +3222,13 @@ namespace IngameScript
                             //We'll need a typeID and a subTypeID, and we'll need to complain if we can't
                             //get them
                             typeID = _iniReadWrite.Get(sectionHeader, "ItemTypeID").ToString();
-                            if (string.IsNullOrEmpty(typeID))
+                            if (isEmptyString(typeID))
                             { textLog.addError($"{declarationType} {declarationName} has a missing or unreadable ItemTypeID."); }
                             subTypeID = _iniReadWrite.Get(sectionHeader, "ItemSubTypeID").ToString();
-                            if (string.IsNullOrEmpty(subTypeID))
+                            if (isEmptyString(subTypeID))
                             { textLog.addError($"{declarationType} {declarationName} has a missing or unreadable ItemSubTypeID."); }
                             //If we have the data we were looking for, we can create a TallyItem
-                            if (!string.IsNullOrEmpty(typeID) && !string.IsNullOrEmpty(subTypeID))
+                            if (!isEmptyString(typeID) && !isEmptyString(subTypeID))
                             { tally = new TallyItem(_meterMaid, declarationName, typeID, subTypeID, highGood); }
                         }
                         //On to the TallyGenerics. We'll start with Batteries
@@ -3767,7 +3411,7 @@ namespace IngameScript
                         string[] moduleConfigurationKeys = null;
                         double[] moduleConfigurationValues = null;
                         string raycasterType = _iniReadWrite.Get(sectionHeader, "Type").ToString().ToLowerInvariant();
-                        if (string.IsNullOrEmpty(raycasterType))
+                        if (isEmptyString(raycasterType))
                         { textLog.addError($"{declarationType} {declarationName} has a missing or unreadable Type."); }
                         //For Linear Raycasters, we read:
                         //BaseRange: (Default: 1000): The distance of the first scan that will be 
@@ -4001,7 +3645,7 @@ namespace IngameScript
                 if (delayOn != 0 || delayOff != 0)
                 {
                     //Create a new action plan
-                    ActionPlanUpdate updatePlan = new ActionPlanUpdate(_distributor);
+                    ActionPlanUpdate updatePlan = new ActionPlanUpdate(this);
                     //Store the values we got. No need to run any checks here, they'll be fine
                     //if we pass them zeros
                     updatePlan.delayOn = delayOn;
@@ -4596,10 +4240,50 @@ namespace IngameScript
                                             { report.font = iniValue.ToString(); }
                                             //Columns. IMPORTANT: Set anchors is no longer called during object
                                             //creation, and therefore MUST be called before the report is finished.
-                                            iniValue = _iniReadWrite.Get(sectionHeader, "Columns");
-                                            //Call setAnchors, using a default value of 1 if we didn't get 
-                                            //configuration data.
-                                            report.setAnchors(iniValue.ToInt32(1), _sb);
+                                            //iniValue = _iniReadWrite.Get(sectionHeader, "Columns");
+                                            //=======================>>><<<
+
+                                            Func<string, float> getPadding = (edge) =>
+                                            { return (float)(_iniReadWrite.Get(sectionHeader, $"Padding{edge}").ToDouble(0)); };
+                                            float padLeft = getPadding("Left");
+                                            float padRight = getPadding("Right");
+                                            float padTop = getPadding("Top");
+                                            float padBottom = getPadding("Bottom");
+
+                                            //Possibly I should've just broken down and written a seperate method for this.
+                                            //Then I could just pass the values by reference and have the method handle 
+                                            //setting them to 0.
+                                            //But I can't overstate how much I hate having to pass half a dozen things into
+                                            //a method just to generate a proper warning message.
+                                            Func<string, float, string, float, bool> paddingExceeds100 =
+                                                (firstEdgeName, firstEdgeValue, secondEdgeName, secondEdgeValue) =>
+                                                {
+                                                    if (firstEdgeValue + secondEdgeValue > 100)
+                                                    {
+                                                        textLog.addWarning($"Surface provider '{block.CustomName}', " +
+                                                                $"section {sectionHeader} has padding values in excess " +
+                                                                $"of 100% for edges {firstEdgeName} and {secondEdgeName} " +
+                                                                $"which have been ignored.");
+                                                        return true;
+                                                    }
+                                                    return false;
+                                                };
+                                            if (paddingExceeds100("Left", padLeft, "Right", padRight))
+                                            {
+                                                padLeft = 0;
+                                                padRight = 0;
+                                            }
+                                            if (paddingExceeds100("Top", padTop, "Bottom", padBottom))
+                                            {
+                                                padTop = 0;
+                                                padBottom = 0;
+                                            }
+
+                                            int columns = _iniReadWrite.Get(sectionHeader, "Columns").ToInt32(1);
+                                            bool titleObeysPadding = _iniReadWrite.Get(sectionHeader, "TitleObeysPadding").ToBoolean(false);
+                                            //Once we have all the data, we can call setAnchors.
+                                            report.setAnchors(columns, padLeft, padRight, padTop, padBottom,
+                                                titleObeysPadding, _sb);
 
                                             //We've should have all the available configuration for this report. Now we'll point
                                             //Reportable at it and move on.
@@ -4801,7 +4485,7 @@ namespace IngameScript
                                         reportable = mfd;
                                         //Now that we have a MFD, we should see if we previously
                                         //had this MFD. And what it was doing.
-                                        mfd.trySetPage(_iniRead.Get("MFDs", mfd.programName).ToString());
+                                        mfd.trySetPageByName(_iniRead.Get("MFDs", mfd.programName).ToString());
                                     }
                                 }
                                 //At long last, we can commit this page to our reportable listing
@@ -4877,6 +4561,196 @@ namespace IngameScript
             return blocks.Count;
         }
 
+        internal abstract class StateMachineBase
+        {
+            //The name of the machine extending this base
+            public string MACHINE_NAME { get; private set; }
+            //Once the machine exceeds the instruction limit, it will yield.
+            protected int INSTRUCTION_LIMIT { get; private set; }
+            //A reference to the external program, mostly for the purpose of determining what this 
+            //tic's instruction count is.
+            protected MyGridProgram program { get; private set; }
+            //The actual state machine
+            protected IEnumerator<string> sequence;
+            //The number of updates this instance has received
+            public int uptime { get; private set; }
+            //The total number of instructions this instance has used
+            public int totalInstructions { get; private set; }
+            //The machine's current status
+            public string status { get; protected set; }
+            //Is a summary of this machine's actions expected?
+            public bool generateLogs { get; private set; }
+
+            public StateMachineBase(MyGridProgram program, string machineName, double allowedPercentOfInstructions,
+                bool createSummary)
+            {
+                this.program = program;
+                MACHINE_NAME = machineName;
+                INSTRUCTION_LIMIT = (int)(program.Runtime.MaxInstructionCount * allowedPercentOfInstructions);
+                uptime = 0;
+                totalInstructions = 0;
+                status = $"{MACHINE_NAME} waiting to begin";
+                generateLogs = createSummary;
+            }
+
+            internal abstract void begin();
+
+            internal bool next()
+            { return sequence.MoveNext(); }
+
+            protected bool isInstructionLimitReached()
+            {
+                if (program.Runtime.CurrentInstructionCount > INSTRUCTION_LIMIT)
+                {
+                    updateStats();
+                    return true;
+                }
+                else
+                { return false; }
+            }
+
+            protected void updateStats()
+            {
+                uptime++;
+                totalInstructions += program.Runtime.CurrentInstructionCount;
+            }
+
+            //internal abstract void end();
+            //I may later decide that there's stuff I want to do with a state machine when it's 
+            //finished. For now, all I really want to do is make sure the enumerator is disposed.
+            internal void end()
+            {
+                sequence.Dispose();
+                status = $"{MACHINE_NAME} completed.";
+            }
+
+            internal abstract string getSummary();
+
+            protected string getStats()
+            {
+                return $"{MACHINE_NAME} used a total of {totalInstructions} / {program.Runtime.MaxInstructionCount} " +
+                    $"({(int)(((double)totalInstructions / program.Runtime.MaxInstructionCount) * 100)}%) " +
+                    $"of instructions allowed in one tic, distributed over {uptime} tics.";
+            }
+        }
+
+        internal class SpriteRefreshMachine : StateMachineBase
+        {
+            //The maximum number of reports the machine will attempt to refrest in a single tic.
+            const int MAX_REFRESH_PER_TIC = 20;
+            //The minimum number of tics we want this process to be distributed over.
+            //It's a double to avoid an ambiguous call to Math.Ceiling
+            const double MIN_DESIRED_TICS = 4;
+            //The reports this machine will refresh.
+            IReportable[] reports;
+
+            public SpriteRefreshMachine(MyGridProgram program, IReportable[] reports, bool createSummary) :
+                base(program, "Sprite Refresher", .1, createSummary)
+            { this.reports = reports; }
+
+            internal override void begin()
+            {
+                sequence = refresherSequence();
+                status = $"{MACHINE_NAME} started";
+            }
+
+            IEnumerator<string> refresherSequence()
+            {
+                //We want sprite refreshing to be distributed over a minimum of 4 tics. Or roughly
+                //4 tics; depending on the numbers involved, we might end up with fewer here due
+                //to rounding.
+                //If we, somehow, have more than 80 seperate reports, we'll do 20 reports per tic and take
+                //more than 4 tics to get the job done. But at 6 possible tics per second and a hard limit
+                //of one refresh every 10 seconds, you'd have to have 1200 reports before you started 
+                //giving the scheduler grief. And at that point, you've probably hit the instruction 
+                //limit on the Update100 processes long ago.
+                int refreshLimit = Math.Min((int)(Math.Ceiling(reports.Length / MIN_DESIRED_TICS)), MAX_REFRESH_PER_TIC);
+                int index = 0;
+                int targetIndex = refreshLimit;
+                foreach (IReportable report in reports)
+                {
+                    report.refresh();
+                    //The refresh method is part of a previous approach to this problem. All it 
+                    //does is tell the report include or exclude an invisible sprite the next time 
+                    //the report is drawn, forcing the server to re-sync the cache.
+                    //This approach is focused on even distribution of networks load, so we'll call
+                    //update immediately instead of waiting for it to come around on its own.
+                    report.update();
+                    index++;
+                    //On the other state machines, this is the sort of place where we'd check against
+                    //the instruction limit. For this one, we're just interested in distributing the
+                    //network load semi-evenly, and we only check against an arbitrary internal limit.
+                    //MONITOR. The limit is set so low that the instruction limit should never come 
+                    //close to being hit, but it is theoretically possible. A call to isInstructionLimitReached()
+                    //could be included here if needed.
+                    if (index >= targetIndex)
+                    {
+                        targetIndex += refreshLimit;
+                        status = $"{MACHINE_NAME} report {index}/{reports.Length}";
+                        updateStats();
+                        yield return status;
+                    }
+                }
+            }
+
+            internal override string getSummary()
+            {
+                return $"{MACHINE_NAME} finished. Re-sync'd sprites on {reports.Length} surfaces.\n" +
+                    $"{getStats()}";
+            }
+        }
+
+        //A state machine for debug use. It exists only to sit in the queue and be in the way of
+        //other things happening.
+        /*
+        internal class FillerMachine : StateMachineBase
+        {
+            int targetLifetime;
+
+            public FillerMachine(MyGridProgram program, int targetLifetime, bool createSummary) :
+                base(program, "Filler", .1, createSummary)
+            { this.targetLifetime = targetLifetime; }
+
+            internal override void begin()
+            {
+                sequence = fillerSequence();
+                status = $"{MACHINE_NAME} started";
+            }
+
+            IEnumerator<string> fillerSequence()
+            {
+                for (int i = 0; i < targetLifetime; i++)
+                {
+                    status = $"{MACHINE_NAME} tic {i}/{targetLifetime}";
+                    updateStats();
+                    yield return status;
+                }
+            }
+
+            internal override string getSummary()
+            {
+                return $"{MACHINE_NAME} finished.\n" +
+                    $"{getStats()}";
+            }
+        }*/
+
+        /*
+        private void checkPadding(string firstEdgeName, ref float firstEdgeValue, 
+            string secondEdgeName, ref float secondeEdgeValue) 
+        {
+            if (firstEdgeValue + secondeEdgeValue > 100)
+            {
+                //TODO: Monitor. I'm almost certain this won't affect
+                //the original values.
+                firstEdgeValue = 0;
+                secondeEdgeValue = 0;
+                textLog.addWarning($"Surface provider '{block.CustomName}', " +
+                        $"section {sectionHeader}'s padding values for " +
+                        $"{firstEdgeName} and {secondEdgeName} exceeded " +
+                        $"100% and have been ignored.");
+            }
+        }*/
+
         //Removes all declaration sections from the PB and returns what's left.
         //Assumes _iniReadWrite is loaded with a parse of the PB's config (Which will be ruined when 
         //  this method completes)
@@ -4928,398 +4802,358 @@ namespace IngameScript
             return outcome;
         }
 
-        /*public Dictionary<string, IColorCoder> compileColors(Dictionary<string, IColorCoder> colorPalette)
-        {
-            //Isn't actually used for anything, this is just the color I've taken to applying to 
-            //my lights, and I wanted it handy.
-            colorPalette.Add("cozy", new ColorCoderMono(new Color(255, 225, 200), "cozy"));
-            //Goes with everything
-            colorPalette.Add("black", new ColorCoderMono(new Color(0, 0, 0), "black"));
-            //We'll be using these in just a second, so we'll go ahead and put handles on them
-            Color optimal = new Color(25, 225, 100);
-            colorPalette.Add("green", new ColorCoderMono(optimal, "green"));
-            Color normal = new Color(100, 200, 225);
-            colorPalette.Add("lightblue", new ColorCoderMono(normal, "lightBlue"));
-            Color caution = new Color(255, 255, 0);
-            colorPalette.Add("yellow", new ColorCoderMono(caution, "yellow"));
-            Color warning = new Color(255, 150, 0);
-            colorPalette.Add("orange", new ColorCoderMono(warning, "orange"));
-            Color critical = new Color(255, 0, 0);
-            colorPalette.Add("red", new ColorCoderMono(critical, "red"));
-
-            colorPalette.Add("lowgood", new ColorCoderLow(optimal, normal, caution, warning, critical));
-            colorPalette.Add("highgood", new ColorCoderHigh(optimal, normal, caution, warning, critical));
-
-            return colorPalette;
-        }*/
-
         public Dictionary<string, Action<IMyTerminalBlock>> compileActions()
         {
-            Dictionary<string, Action<IMyTerminalBlock>> actions = new Dictionary<string, Action<IMyTerminalBlock>>();
-            //The actions that can be performed by this script, in no particular order:
-            //Functional Blocks
-            actions.Add("EnableOn", b => ((IMyFunctionalBlock)b).Enabled = true);
-            actions.Add("EnableOff", b => ((IMyFunctionalBlock)b).Enabled = false);
-            //Battery Blocks
-            actions.Add("BatteryAuto", b => ((IMyBatteryBlock)b).ChargeMode = ChargeMode.Auto);
-            actions.Add("BatteryRecharge", b => ((IMyBatteryBlock)b).ChargeMode = ChargeMode.Recharge);
-            actions.Add("BatteryDischarge", b => ((IMyBatteryBlock)b).ChargeMode = ChargeMode.Discharge);
+            //Dictionary<string, Action<IMyTerminalBlock>> actions = new Dictionary<string, Action<IMyTerminalBlock>>();
+            Dictionary<string, Action<IMyTerminalBlock>> actions =
+                new Dictionary<string, Action<IMyTerminalBlock>>(StringComparer.OrdinalIgnoreCase);
+            //A giant list of raw strings. It was the tallest nail when the hammer of character count
+            //optimization came around.
+            string blockName;
+            string commandName = "Enable";
+            string positive = "Positive";
+            string negative = "Negative";
+
+            //Functional Blocks==================
+            //EnableOn
+            actions.Add($"{commandName}On", b => ((IMyFunctionalBlock)b).Enabled = true);
+            //EnableOff
+            actions.Add($"{commandName}Off", b => ((IMyFunctionalBlock)b).Enabled = false);
+
+            //Battery Blocks=====================
+            blockName = "Battery";
+            commandName = "charge";
+            //BatteryAuto
+            actions.Add($"{blockName}Auto", b => ((IMyBatteryBlock)b).ChargeMode = ChargeMode.Auto);
+            //BatteryRecharge
+            actions.Add($"{blockName}Re{commandName}", b => ((IMyBatteryBlock)b).ChargeMode = ChargeMode.Recharge);
+            //BatteryDischarge
+            actions.Add($"{blockName}Dis{commandName}", b => ((IMyBatteryBlock)b).ChargeMode = ChargeMode.Discharge);
+
             //Cameras
             //20240912: Doesn't actually seem to work. Not sure why. Leaving it in for now,
             //but not documenting its existence.
-            actions.Add("CameraRaycastEnable", b => ((IMyCameraBlock)b).EnableRaycast = true);
-            actions.Add("CameraRaycastDisable", b => ((IMyCameraBlock)b).EnableRaycast = false);
-            //Connectors
-            actions.Add("ConnectorLock", b => ((IMyShipConnector)b).Connect());
-            actions.Add("ConnectorUnlock", b => ((IMyShipConnector)b).Disconnect());
-            //Doors
-            actions.Add("DoorOpen", b => ((IMyDoor)b).OpenDoor());
-            actions.Add("DoorClose", b => ((IMyDoor)b).CloseDoor());
-            //GasTanks
-            actions.Add("TankStockpileOn", b => ((IMyGasTank)b).Stockpile = true);
-            actions.Add("TankStockpileOff", b => ((IMyGasTank)b).Stockpile = false);
-            //Gyros
+            //20250519: Disabled for character count.
+            //actions.Add("CameraRaycastEnable", b => ((IMyCameraBlock)b).EnableRaycast = true);
+            //actions.Add("CameraRaycastDisable", b => ((IMyCameraBlock)b).EnableRaycast = false);
+
+            //Connectors=========================
+            blockName = "Connector";
+            //ConnectorLock
+            actions.Add($"{blockName}Lock", b => ((IMyShipConnector)b).Connect());
+            //ConnectorUnlock
+            actions.Add($"{blockName}Unlock", b => ((IMyShipConnector)b).Disconnect());
+
+            //Doors==============================
+            blockName = "Door";
+            //DoorOpen
+            actions.Add($"{blockName}Open", b => ((IMyDoor)b).OpenDoor());
+            //DoorClose
+            actions.Add($"{blockName}Close", b => ((IMyDoor)b).CloseDoor());
+
+            //GasTanks===========================
+            blockName = "Tank";
+            commandName = "Stockpile";
+            //TankStockpileOn
+            actions.Add($"{blockName}{commandName}On", b => ((IMyGasTank)b).Stockpile = true);
+            //TankStockpileOff
+            actions.Add($"{blockName}{commandName}Off", b => ((IMyGasTank)b).Stockpile = false);
+
+            //Gyros==============================
+            blockName = "Gyro";
+            string stabilize = "Stabilize";
             //Gyro overides are set in RPM, but we can't say for sure what the max RPM of a given 
             //block may be. So instead, we use arbitrarily high numbers and let the block sort it out.
-            actions.Add("GyroOverrideOn", b => ((IMyGyro)b).GyroOverride = true);
-            actions.Add("GyroOverrideOff", b => ((IMyGyro)b).GyroOverride = false);
-            actions.Add("GyroYawPositive", b => ((IMyGyro)b).Yaw = 9000);
-            actions.Add("GyroYawStabilize", b => ((IMyGyro)b).Yaw = 0);
-            actions.Add("GyroYawNegative", b => ((IMyGyro)b).Yaw = -9000);
+            //GyroOverrideOn
+            commandName = "Override";
+            //GyroOverrideOn
+            actions.Add($"{blockName}{commandName}On", b => ((IMyGyro)b).GyroOverride = true);
+            //GyroOverrideOff
+            actions.Add($"{blockName}{commandName}Off", b => ((IMyGyro)b).GyroOverride = false);
+            //GyroYawPositive
+            actions.Add($"{blockName}Yaw{positive}", b => ((IMyGyro)b).Yaw = 9000);
+            //GyroYawStabilize
+            actions.Add($"{blockName}Yaw{stabilize}", b => ((IMyGyro)b).Yaw = 0);
+            //GyroYawNegative
+            actions.Add($"{blockName}Yaw{negative}", b => ((IMyGyro)b).Yaw = -9000);
             //Yes, I'm assigning PitchPositive to be -9000. Yes, that makes no sense. No, I don't 
             //know why it has to be this way to make it work correctly.
-            actions.Add("GyroPitchPositive", b => ((IMyGyro)b).Pitch = -9000);
-            actions.Add("GyroPitchStabilize", b => ((IMyGyro)b).Pitch = 0);
-            actions.Add("GyroPitchNegative", b => ((IMyGyro)b).Pitch = 9000);
-            actions.Add("GyroRollPositive", b => ((IMyGyro)b).Roll = 9000);
-            actions.Add("GyroRollStabilize", b => ((IMyGyro)b).Roll = 0);
-            actions.Add("GyroRollNegative", b => ((IMyGyro)b).Roll = -9000);
-            /* SCRAP
-            actions.Add("GyroYawPositive", b =>
-            {
-                IMyGyro gyro = (IMyGyro)b;
-                gyro.GyroOverride = true;
-                gyro.Yaw = 9000;
-            });
-            actions.Add("GyroYawNegative", b =>
-            {
-                IMyGyro gyro = (IMyGyro)b;
-                gyro.GyroOverride = true;
-                gyro.Yaw = -9000;
-            });
-            actions.Add("GyroPitchPositive", b =>
-            {
-                IMyGyro gyro = (IMyGyro)b;
-                gyro.GyroOverride = true;
-                gyro.Pitch = 9000;
-            });
-            actions.Add("GyroPitchNegative", b =>
-            {
-                IMyGyro gyro = (IMyGyro)b;
-                gyro.GyroOverride = true;
-                gyro.Pitch = -9000;
-            });
-            actions.Add("GyroRollPositive", b =>
-            {
-                IMyGyro gyro = (IMyGyro)b;
-                gyro.GyroOverride = true;
-                gyro.Roll = 9000;
-            });
-            actions.Add("GyroRollNegative", b =>
-            {
-                IMyGyro gyro = (IMyGyro)b;
-                gyro.GyroOverride = true;
-                gyro.Roll = -9000;
-            });
-            actions.Add("GyroOverrideOn", b => ((IMyGyro)b).GyroOverride = true);
-            actions.Add("GyroOverrideOff", b =>
-            {
-                IMyGyro gyro = (IMyGyro)b;
-                gyro.Yaw = 0;
-                gyro.Pitch = 0;
-                gyro.Roll = 0;
-                gyro.GyroOverride = false;
-            });*/
-            //LandingGear
-            actions.Add("GearAutoLockOn", b => ((IMyLandingGear)b).AutoLock = true);
-            actions.Add("GearAutoLockOff", b => ((IMyLandingGear)b).AutoLock = false);
-            actions.Add("GearLock", b => ((IMyLandingGear)b).Lock());
-            actions.Add("GearUnlock", b => ((IMyLandingGear)b).Unlock());
-            //Jump Drives
-            actions.Add("JumpDriveRechargeOn", b => ((IMyJumpDrive)b).Recharge = true);
-            actions.Add("JumpDriveRechargeOff", b => ((IMyJumpDrive)b).Recharge = false);
-            //Parachutes
-            actions.Add("ParachuteOpen", b => ((IMyParachute)b).OpenDoor());
-            actions.Add("ParachuteClose", b => ((IMyParachute)b).CloseDoor());
-            actions.Add("ParachuteAutoDeployOn", b => ((IMyParachute)b).AutoDeploy = true);
-            actions.Add("ParachuteAutoDeployOff", b => ((IMyParachute)b).AutoDeploy = false);
-            //Pistons
-            actions.Add("PistonExtend", b => ((IMyPistonBase)b).Extend());
-            actions.Add("PistonRetract", b => ((IMyPistonBase)b).Retract());
-            //Rotors
-            actions.Add("RotorLock", b => ((IMyMotorAdvancedStator)b).RotorLock = true);
-            actions.Add("RotorUnlock", b => ((IMyMotorAdvancedStator)b).RotorLock = false);
-            actions.Add("RotorReverse", b => ((IMyMotorAdvancedStator)b).TargetVelocityRPM =
+            //GyroPitchPositive
+            commandName = "Pitch";
+            actions.Add($"{blockName}{commandName}{positive}", b => ((IMyGyro)b).Pitch = -9000);
+            //GyroPitchStabilize
+            actions.Add($"{blockName}{commandName}{stabilize}", b => ((IMyGyro)b).Pitch = 0);
+            //GyroPitchNegative
+            actions.Add($"{blockName}{commandName}{negative}", b => ((IMyGyro)b).Pitch = 9000);
+            //GyroRollPositive
+            commandName = "Roll";
+            actions.Add($"{blockName}{commandName}{positive}", b => ((IMyGyro)b).Roll = 9000);
+            //GyroRollStabilize
+            actions.Add($"{blockName}{commandName}{stabilize}", b => ((IMyGyro)b).Roll = 0);
+            //GyroRollNegative
+            actions.Add($"{blockName}{commandName}{negative}", b => ((IMyGyro)b).Roll = -9000);
+
+            //LandingGear========================
+            blockName = "Gear";
+            commandName = "AutoLock";
+            //GearAutoLockOn
+            actions.Add($"{blockName}{commandName}On", b => ((IMyLandingGear)b).AutoLock = true);
+            //GearAutoLockOff
+            actions.Add($"{blockName}{commandName}Off", b => ((IMyLandingGear)b).AutoLock = false);
+            //GearLock
+            actions.Add($"{blockName}Lock", b => ((IMyLandingGear)b).Lock());
+            //GearUnlock
+            actions.Add($"{blockName}Unlock", b => ((IMyLandingGear)b).Unlock());
+
+            //Jump Drives========================
+            blockName = "JumpDrive";
+            commandName = "Recharge";
+            //JumpDriveRechargeOn
+            actions.Add($"{blockName}{commandName}On", b => ((IMyJumpDrive)b).Recharge = true);
+            //JumpDriveRechargeOff
+            actions.Add($"{blockName}{commandName}Off", b => ((IMyJumpDrive)b).Recharge = false);
+
+            //Parachutes=========================
+            blockName = "Parachute";
+            //ParachuteOpen
+            actions.Add($"{blockName}Open", b => ((IMyParachute)b).OpenDoor());
+            //ParachuteClose
+            actions.Add($"{blockName}Close", b => ((IMyParachute)b).CloseDoor());
+            commandName = "AutoDeploy";
+            //ParachuteAutoDeployOn
+            actions.Add($"{blockName}{commandName}On", b => ((IMyParachute)b).AutoDeploy = true);
+            //ParachuteAutoDeployOff
+            actions.Add($"{blockName}{commandName}Off", b => ((IMyParachute)b).AutoDeploy = false);
+
+            //Pistons============================
+            blockName = "Piston";
+            //PistonExtend
+            actions.Add($"{blockName}Extend", b => ((IMyPistonBase)b).Extend());
+            //PistonRetract
+            actions.Add($"{blockName}Retract", b => ((IMyPistonBase)b).Retract());
+
+            //Rotors=============================
+            /*
+            //RotorLock
+            actions.Add($"{blockName}Lock", b => ((IMyMotorAdvancedStator)b).RotorLock = true);
+            //RotorUnlock
+            actions.Add($"{blockName}Unlock", b => ((IMyMotorAdvancedStator)b).RotorLock = false);
+            //RotorReverse
+            actions.Add($"{blockName}Reverse", b => ((IMyMotorAdvancedStator)b).TargetVelocityRPM =
                 ((IMyMotorAdvancedStator)b).TargetVelocityRPM * -1);
-            actions.Add("RotorPositive", b => ((IMyMotorAdvancedStator)b).TargetVelocityRPM =
+            //RotorPositive
+            actions.Add($"{blockName}{positive}", b => ((IMyMotorAdvancedStator)b).TargetVelocityRPM =
                 Math.Abs(((IMyMotorAdvancedStator)b).TargetVelocityRPM));
-            actions.Add("RotorNegative", b => ((IMyMotorAdvancedStator)b).TargetVelocityRPM =
-                Math.Abs(((IMyMotorAdvancedStator)b).TargetVelocityRPM) * -1);
-            //Sorters
-            actions.Add("SorterDrainOn", b => ((IMyConveyorSorter)b).DrainAll = true);
-            actions.Add("SorterDrainOff", b => ((IMyConveyorSorter)b).DrainAll = false);
-            //Sound Block
-            actions.Add("SoundPlay", b => ((IMySoundBlock)b).Play());
-            actions.Add("SoundStop", b => ((IMySoundBlock)b).Stop());
-            //Thrusters
-            actions.Add("ThrusterOverrideMax", b => ((IMyThrust)b).ThrustOverridePercentage = 1);
-            actions.Add("ThrusterOverrideOff", b => ((IMyThrust)b).ThrustOverridePercentage = 0);
-            //Timers
-            actions.Add("TimerTrigger", b => ((IMyTimerBlock)b).Trigger());
-            actions.Add("TimerStart", b => ((IMyTimerBlock)b).StartCountdown());
-            actions.Add("TimerStop", b => ((IMyTimerBlock)b).StopCountdown());
-            //Turrets
-            actions.Add("TurretTargetMeteorsOn", b => ((IMyLargeTurretBase)b).TargetMeteors = true);
-            actions.Add("TurretTargetMeteorsOff", b => ((IMyLargeTurretBase)b).TargetMeteors = false);
-            actions.Add("TurretTargetMissilesOn", b => ((IMyLargeTurretBase)b).TargetMissiles = true);
-            actions.Add("TurretTargetMissilesOff", b => ((IMyLargeTurretBase)b).TargetMissiles = false);
-            actions.Add("TurretTargetSmallGridsOn", b => ((IMyLargeTurretBase)b).TargetSmallGrids = true);
-            actions.Add("TurretTargetSmallGridsOff", b => ((IMyLargeTurretBase)b).TargetSmallGrids = false);
-            actions.Add("TurretTargetLargeGridsOn", b => ((IMyLargeTurretBase)b).TargetLargeGrids = true);
-            actions.Add("TurretTargetLargeGridsOff", b => ((IMyLargeTurretBase)b).TargetLargeGrids = false);
-            actions.Add("TurretTargetCharactersOn", b => ((IMyLargeTurretBase)b).TargetCharacters = true);
-            actions.Add("TurretTargetCharactersOff", b => ((IMyLargeTurretBase)b).TargetCharacters = false);
-            actions.Add("TurretTargetStationsOn", b => ((IMyLargeTurretBase)b).TargetStations = true);
-            actions.Add("TurretTargetStationsOff", b => ((IMyLargeTurretBase)b).TargetStations = false);
-            actions.Add("TurretTargetNeutralsOn", b => ((IMyLargeTurretBase)b).TargetNeutrals = true);
-            actions.Add("TurretTargetNeutralsOff", b => ((IMyLargeTurretBase)b).TargetNeutrals = false);
-            actions.Add("TurretTargetEnemiesOn", b => ((IMyLargeTurretBase)b).TargetEnemies = true);
-            actions.Add("TurretTargetEnemiesOff", b => ((IMyLargeTurretBase)b).TargetEnemies = false);
-            actions.Add("TurretSubsystemDefault", b => ((IMyLargeTurretBase)b).SetTargetingGroup(""));
-            actions.Add("TurretSubsystemWeapons", b => ((IMyLargeTurretBase)b).SetTargetingGroup("Weapons"));
-            actions.Add("TurretSubsystemPropulsion", b => ((IMyLargeTurretBase)b).SetTargetingGroup("Propulsion"));
-            actions.Add("TurretSubsystemPowerSystems", b => ((IMyLargeTurretBase)b).SetTargetingGroup("PowerSystems"));
-            /* SCRAP
-            actions.Add("TurretPassive", b =>
-            {
-                //meteor missile small large char stations
-                IMyLargeTurretBase turret = (IMyLargeTurretBase)b;
-                turret.TargetMeteors = false;
-                turret.TargetMissiles = false;
-                turret.TargetSmallGrids = false;
-                turret.TargetLargeGrids = false;
-                turret.TargetCharacters = false;
-                turret.TargetStations = false;
-            });
-            //TurretDefensive: Targets meteors and projectiles
-            actions.Add("TurretDefensive", b =>
-            {
-                IMyLargeTurretBase turret = (IMyLargeTurretBase)b;
-                turret.TargetMeteors = true;
-                turret.TargetMissiles = true;
-                turret.TargetSmallGrids = false;
-                turret.TargetLargeGrids = false;
-                turret.TargetCharacters = false;
-                turret.TargetStations = false;
-            });
-            //TurretPrecision: Targets characters, small grid, meteors, projectiles
-            actions.Add("TurretPrecision", b =>
-            {
-                IMyLargeTurretBase turret = (IMyLargeTurretBase)b;
-                turret.TargetMeteors = true;
-                turret.TargetMissiles = true;
-                turret.TargetSmallGrids = true;
-                turret.TargetLargeGrids = false;
-                turret.TargetCharacters = true;
-                turret.TargetStations = false;
-            });
-            //TurretFastTracking: Targets small grid, large grid, stations
-            actions.Add("TurretFastTracking", b =>
-            {
-                IMyLargeTurretBase turret = (IMyLargeTurretBase)b;
-                turret.TargetMeteors = false;
-                turret.TargetMissiles = false;
-                turret.TargetSmallGrids = true;
-                turret.TargetLargeGrids = true;
-                turret.TargetCharacters = false;
-                turret.TargetStations = true;
-            });
-            //TurretAntiArmor: Targets large grids, stations
-            actions.Add("TurretAntiArmor", b =>
-            {
-                IMyLargeTurretBase turret = (IMyLargeTurretBase)b;
-                turret.TargetMeteors = false;
-                turret.TargetMissiles = false;
-                turret.TargetSmallGrids = false;
-                turret.TargetLargeGrids = true;
-                turret.TargetCharacters = false;
-                turret.TargetStations = true;
-            });
-            //TurretArtillery: Targets stations
-            actions.Add("TurretSiege", b =>
-            {
-                IMyLargeTurretBase turret = (IMyLargeTurretBase)b;
-                turret.TargetMeteors = false;
-                turret.TargetMissiles = false;
-                turret.TargetSmallGrids = false;
-                turret.TargetLargeGrids = false;
-                turret.TargetCharacters = false;
-                turret.TargetStations = true;
-            });
-            actions.Add("TurretSubsystemDefault", b => ((IMyLargeTurretBase)b).SetTargetingGroup(""));
-            actions.Add("TurretSubsystemWeapons", b => ((IMyLargeTurretBase)b).SetTargetingGroup("Weapons"));
-            actions.Add("TurretSubsystemPropulsion", b => ((IMyLargeTurretBase)b).SetTargetingGroup("Propulsion"));
-            actions.Add("TurretSubsystemPowerSystems", b => ((IMyLargeTurretBase)b).SetTargetingGroup("PowerSystems"));
-            actions.Add("TurretSwatOn", b =>
-            {
-                IMyLargeTurretBase turret = (IMyLargeTurretBase)b;
-                turret.TargetSmallGrids = true;
-                turret.TargetLargeGrids = false;
-                turret.TargetCharacters = true;
-                turret.TargetStations = false;
-                turret.SetTargetingGroup("");
-            });
-            actions.Add("TurretSwatOff", b =>
-            {
-                IMyLargeTurretBase turret = (IMyLargeTurretBase)b;
-                turret.TargetSmallGrids = true;
-                turret.TargetLargeGrids = true;
-                turret.TargetCharacters = false;
-                turret.TargetStations = true;
-                turret.SetTargetingGroup("Weapons");
-            });*/
-            //Custom turret controllers
-            actions.Add("ControllerTargetMeteorsOn", b => ((IMyTurretControlBlock)b).TargetMeteors = true);
-            actions.Add("ControllerTargetMeteorsOff", b => ((IMyTurretControlBlock)b).TargetMeteors = false);
-            actions.Add("ControllerTargetMissilesOn", b => ((IMyTurretControlBlock)b).TargetMissiles = true);
-            actions.Add("ControllerTargetMissilesOff", b => ((IMyTurretControlBlock)b).TargetMissiles = false);
-            actions.Add("ControllerTargetSmallGridsOn", b => ((IMyTurretControlBlock)b).TargetSmallGrids = true);
-            actions.Add("ControllerTargetSmallGridsOff", b => ((IMyTurretControlBlock)b).TargetSmallGrids = false);
-            actions.Add("ControllerTargetLargeGridsOn", b => ((IMyTurretControlBlock)b).TargetLargeGrids = true);
-            actions.Add("ControllerTargetLargeGridsOff", b => ((IMyTurretControlBlock)b).TargetLargeGrids = false);
-            actions.Add("ControllerTargetCharactersOn", b => ((IMyTurretControlBlock)b).TargetCharacters = true);
-            actions.Add("ControllerTargetCharactersOff", b => ((IMyTurretControlBlock)b).TargetCharacters = false);
-            actions.Add("ControllerTargetStationsOn", b => ((IMyTurretControlBlock)b).TargetStations = true);
-            actions.Add("ControllerTargetStationsOff", b => ((IMyTurretControlBlock)b).TargetStations = false);
-            actions.Add("ControllerTargetNeutralsOn", b => ((IMyTurretControlBlock)b).TargetNeutrals = true);
-            actions.Add("ControllerTargetNeutralsOff", b => ((IMyTurretControlBlock)b).TargetNeutrals = false);
+            //RotorNegative
+            actions.Add($"{blockName}{negative}", b => ((IMyMotorAdvancedStator)b).TargetVelocityRPM =
+                Math.Abs(((IMyMotorAdvancedStator)b).TargetVelocityRPM) * -1);*/
+            blockName = "Rotor";
+            //RotorLock
+            actions.Add($"{blockName}Lock", b => ((IMyMotorStator)b).RotorLock = true);
+            //RotorUnlock
+            actions.Add($"{blockName}Unlock", b => ((IMyMotorStator)b).RotorLock = false);
+            //RotorReverse
+            actions.Add($"{blockName}Reverse", b => ((IMyMotorStator)b).TargetVelocityRPM =
+                ((IMyMotorStator)b).TargetVelocityRPM * -1);
+            //RotorPositive
+            actions.Add($"{blockName}{positive}", b => ((IMyMotorStator)b).TargetVelocityRPM =
+                Math.Abs(((IMyMotorStator)b).TargetVelocityRPM));
+            //RotorNegative
+            actions.Add($"{blockName}{negative}", b => ((IMyMotorStator)b).TargetVelocityRPM =
+                Math.Abs(((IMyMotorStator)b).TargetVelocityRPM) * -1);
+
+            //Sorters============================
+            blockName = "Sorter";
+            commandName = "Drain";
+            //SorterDrainOn
+            actions.Add($"{blockName}{commandName}On", b => ((IMyConveyorSorter)b).DrainAll = true);
+            //SorterDrainOff
+            actions.Add($"{blockName}{commandName}Off", b => ((IMyConveyorSorter)b).DrainAll = false);
+
+            //Sound Block========================
+            blockName = "Sound";
+            //SoundPlay
+            actions.Add($"{blockName}Play", b => ((IMySoundBlock)b).Play());
+            //SoundStop
+            actions.Add($"{blockName}Stop", b => ((IMySoundBlock)b).Stop());
+
+            //Thrusters==========================
+            blockName = "Thruster";
+            commandName = "Override";
+            //ThrusterOverrideMax
+            actions.Add($"{blockName}{commandName}Max", b => ((IMyThrust)b).ThrustOverridePercentage = 1);
+            //ThrusterOverrideOff
+            actions.Add($"{blockName}{commandName}Off", b => ((IMyThrust)b).ThrustOverridePercentage = 0);
+
+            //Timers=============================
+            blockName = "Timer";
+            //TimerTrigger
+            actions.Add($"{blockName}Trigger", b => ((IMyTimerBlock)b).Trigger());
+            //TimerStart
+            actions.Add($"{blockName}Start", b => ((IMyTimerBlock)b).StartCountdown());
+            //TimerStop
+            actions.Add($"{blockName}Stop", b => ((IMyTimerBlock)b).StopCountdown());
+
+            //Turrets and Custom Controllers=====
+            blockName = "Turret";
+            string controller = "Controller";
+            string target = "Target";
+            commandName = "Meteors";
+            //TurretTargetMeteorsOn
+            actions.Add($"{blockName}{target}{commandName}On", b => ((IMyLargeTurretBase)b).TargetMeteors = true);
+            //TurretTargetMeteorsOff
+            actions.Add($"{blockName}{target}{commandName}Off", b => ((IMyLargeTurretBase)b).TargetMeteors = false);
+            //ControllerTargetMeteorsOn
+            actions.Add($"{controller}{target}{commandName}On", b => ((IMyTurretControlBlock)b).TargetMeteors = true);
+            //ControllerTargetMeteorsOff
+            actions.Add($"{controller}{target}{commandName}Off", b => ((IMyTurretControlBlock)b).TargetMeteors = false);
+
+            commandName = "Missiles";
+            //TurretTargetMissilesOn
+            actions.Add($"{blockName}{target}{commandName}On", b => ((IMyLargeTurretBase)b).TargetMissiles = true);
+            //TurretTargetMissilesOff
+            actions.Add($"{blockName}{target}{commandName}Off", b => ((IMyLargeTurretBase)b).TargetMissiles = false);
+            //ControllerTargetMissilesOn
+            actions.Add($"{controller}{target}{commandName}On", b => ((IMyTurretControlBlock)b).TargetMissiles = true);
+            //ControllerTargetMissilesOff
+            actions.Add($"{controller}{target}{commandName}Off", b => ((IMyTurretControlBlock)b).TargetMissiles = false);
+
+            commandName = "SmallGrids";
+            //TurretTargetSmallGridsOn
+            actions.Add($"{blockName}{target}{commandName}On", b => ((IMyLargeTurretBase)b).TargetSmallGrids = true);
+            //TurretTargetSmallGridsOff
+            actions.Add($"{blockName}{target}{commandName}Off", b => ((IMyLargeTurretBase)b).TargetSmallGrids = false);
+            //ControllerTargetSmallGridsOn
+            actions.Add($"{controller}{target}{commandName}On", b => ((IMyTurretControlBlock)b).TargetSmallGrids = true);
+            //ControllerTargetSmallGridsOff
+            actions.Add($"{controller}{target}{commandName}Off", b => ((IMyTurretControlBlock)b).TargetSmallGrids = false);
+
+            commandName = "LargeGrids";
+            //TurretTargetLargeGridsOn
+            actions.Add($"{blockName}{target}{commandName}On", b => ((IMyLargeTurretBase)b).TargetLargeGrids = true);
+            //TurretTargetLargeGridsOff
+            actions.Add($"{blockName}{target}{commandName}Off", b => ((IMyLargeTurretBase)b).TargetLargeGrids = false);
+            //ControllerTargetLargeGridsOn
+            actions.Add($"{controller}{target}{commandName}On", b => ((IMyTurretControlBlock)b).TargetLargeGrids = true);
+            //ControllerTargetLargeGridsOff
+            actions.Add($"{controller}{target}{commandName}Off", b => ((IMyTurretControlBlock)b).TargetLargeGrids = false);
+
+            commandName = "Characters";
+            //TurretTargetCharactersOn
+            actions.Add($"{blockName}{target}{commandName}On", b => ((IMyLargeTurretBase)b).TargetCharacters = true);
+            //TurretTargetCharactersOff
+            actions.Add($"{blockName}{target}{commandName}Off", b => ((IMyLargeTurretBase)b).TargetCharacters = false);
+            //ControllerTargetCharactersOn
+            actions.Add($"{controller}{target}{commandName}On", b => ((IMyTurretControlBlock)b).TargetCharacters = true);
+            //ControllerTargetCharactersOff
+            actions.Add($"{controller}{target}{commandName}Off", b => ((IMyTurretControlBlock)b).TargetCharacters = false);
+
+            commandName = "Stations";
+            //TurretTargetStationsOn
+            actions.Add($"{blockName}{target}{commandName}On", b => ((IMyLargeTurretBase)b).TargetStations = true);
+            //TurretTargetStationsOff
+            actions.Add($"{blockName}{target}{commandName}Off", b => ((IMyLargeTurretBase)b).TargetStations = false);
+            //ControllerTargetStationsOn
+            actions.Add($"{controller}{target}{commandName}On", b => ((IMyTurretControlBlock)b).TargetStations = true);
+            //ControllerTargetStationsOff
+            actions.Add($"{controller}{target}{commandName}Off", b => ((IMyTurretControlBlock)b).TargetStations = false);
+
+            commandName = "Neutrals";
+            //TurretTargetNeutralsOn
+            actions.Add($"{blockName}{target}{commandName}On", b => ((IMyLargeTurretBase)b).TargetNeutrals = true);
+            //TurretTargetNeutralsOff
+            actions.Add($"{blockName}{target}{commandName}Off", b => ((IMyLargeTurretBase)b).TargetNeutrals = false);
+            //ControllerTargetNeutralsOn
+            actions.Add($"{controller}{target}{commandName}On", b => ((IMyTurretControlBlock)b).TargetNeutrals = true);
+            //ControllerTargetNeutralsOff
+            actions.Add($"{controller}{target}{commandName}Off", b => ((IMyTurretControlBlock)b).TargetNeutrals = false);
+
+            commandName = "Enemies";
+            //TurretTargetEnemiesOn
+            actions.Add($"{blockName}{target}{commandName}On", b => ((IMyLargeTurretBase)b).TargetEnemies = true);
+            //TurretTargetEnemiesOff
+            actions.Add($"{blockName}{target}{commandName}Off", b => ((IMyLargeTurretBase)b).TargetEnemies = false);
             //For some reason, Turret Controller blocks don't have a setter for TargetEnemies. So 
             //instead, we have to use terminal actions.
-            actions.Add("ControllerTargetEnemiesOn", b => b.SetValue<bool>("TargetEnemies", true));
-            actions.Add("ControllerTargetEnemiesOff", b => b.SetValue<bool>("TargetEnemies", false));
-            actions.Add("ControllerSubsystemDefault", b => ((IMyTurretControlBlock)b).SetTargetingGroup(""));
-            actions.Add("ControllerSubsystemWeapons", b => ((IMyTurretControlBlock)b).SetTargetingGroup("Weapons"));
-            actions.Add("ControllerSubsystemPropulsion", b => ((IMyTurretControlBlock)b).SetTargetingGroup("Propulsion"));
-            actions.Add("ControllerSubsystemPowerSystems", b => ((IMyTurretControlBlock)b).SetTargetingGroup("PowerSystems"));
-            /* SCRAP
-            actions.Add("ControllerPassive", b =>
-            {
-                //meteor missile small large char stations
-                IMyTurretControlBlock controller = (IMyTurretControlBlock)b;
-                controller.TargetMeteors = false;
-                controller.TargetMissiles = false;
-                controller.TargetSmallGrids = false;
-                controller.TargetLargeGrids = false;
-                controller.TargetCharacters = false;
-                controller.TargetStations = false; 
-            });
-            
-            //ControllerDefensive: Targets meteors and projectiles
-            actions.Add("ControllerDefensive", b =>
-            {
-                IMyTurretControlBlock controller = (IMyTurretControlBlock)b;
-                controller.TargetMeteors = true;
-                controller.TargetMissiles = true;
-                controller.TargetSmallGrids = false;
-                controller.TargetLargeGrids = false;
-                controller.TargetCharacters = false;
-                controller.TargetStations = false;
-            });
-            //ControllerPrecision: Targets characters, small grid, meteors, projectiles
-            actions.Add("ControllerPrecision", b =>
-            {
-                IMyTurretControlBlock controller = (IMyTurretControlBlock)b;
-                controller.TargetMeteors = true;
-                controller.TargetMissiles = true;
-                controller.TargetSmallGrids = true;
-                controller.TargetLargeGrids = false;
-                controller.TargetCharacters = true;
-                controller.TargetStations = false;
-            });
-            //ControllerFastTracking: Targets small grid, large grid, stations
-            actions.Add("ControllerFastTracking", b =>
-            {
-                IMyTurretControlBlock controller = (IMyTurretControlBlock)b;
-                controller.TargetMeteors = false;
-                controller.TargetMissiles = false;
-                controller.TargetSmallGrids = true;
-                controller.TargetLargeGrids = true;
-                controller.TargetCharacters = false;
-                controller.TargetStations = true;
-            });
-            //ControllerAntiArmor: Targets large grids, stations
-            actions.Add("ControllerAntiArmor", b =>
-            {
-                IMyTurretControlBlock controller = (IMyTurretControlBlock)b;
-                controller.TargetMeteors = false;
-                controller.TargetMissiles = false;
-                controller.TargetSmallGrids = false;
-                controller.TargetLargeGrids = true;
-                controller.TargetCharacters = false;
-                controller.TargetStations = true;
-            });
-            //ControllerArtillery: Targets stations
-            actions.Add("ControllerSiege", b =>
-            {
-                IMyTurretControlBlock controller = (IMyTurretControlBlock)b;
-                controller.TargetMeteors = false;
-                controller.TargetMissiles = false;
-                controller.TargetSmallGrids = false;
-                controller.TargetLargeGrids = false;
-                controller.TargetCharacters = false;
-                controller.TargetStations = true;
-            });
-            actions.Add("ControllerSubsystemDefault", b => ((IMyTurretControlBlock)b).SetTargetingGroup(""));
-            actions.Add("ControllerSubsystemWeapons", b => ((IMyTurretControlBlock)b).SetTargetingGroup("Weapons"));
-            actions.Add("ControllerSubsystemPropulsion", b => ((IMyTurretControlBlock)b).SetTargetingGroup("Propulsion"));
-            actions.Add("ControllerSubsystemPowerSystems", b => ((IMyTurretControlBlock)b).SetTargetingGroup("PowerSystems"));
-            actions.Add("ControllerSwatOn", b =>
-            {
-                IMyTurretControlBlock controller = (IMyTurretControlBlock)b;
-                controller.TargetSmallGrids = true;
-                controller.TargetLargeGrids = false;
-                controller.TargetCharacters = true;
-                controller.TargetStations = false;
-                controller.SetTargetingGroup("");
-            });
-            actions.Add("ControllerSwatOff", b =>
-            {
-                IMyTurretControlBlock controller = (IMyTurretControlBlock)b;
-                controller.TargetSmallGrids = true;
-                controller.TargetLargeGrids = true;
-                controller.TargetCharacters = false;
-                controller.TargetStations = true;
-                controller.SetTargetingGroup("Weapons");
-            });
+            //TurretTargetEnemiesOn
+            actions.Add($"{controller}{target}{commandName}On", b => b.SetValue("TargetEnemies", true));
+            //TurretTargetEnemiesOff
+            actions.Add($"{controller}{target}{commandName}Off", b => b.SetValue("TargetEnemies", false));
+            /* This never worked, and despite some fairly rigorous testing (Where this worked in isolation),
+             * I couldn't figure out why. It's something in the lambda expression, possibly the interpolated
+             * string. (20250519)
+            //ControllerTargetEnemiesOn
+            actions.Add($"{controller}{target}{commandName}On", b => b.SetValue($"{target}{commandName}", true));
+            //ControllerTargetEnemiesOff
+            actions.Add($"{controller}{target}{commandName}Off", b => b.SetValue($"{target}{commandName}", false));
             */
-            //Vents
-            actions.Add("VentPressurize", b => ((IMyAirVent)b).Depressurize = false);
-            actions.Add("VentDepressurize", b => ((IMyAirVent)b).Depressurize = true);
-            //Warheads
-            actions.Add("WarheadArm", b => ((IMyWarhead)b).IsArmed = true);
-            actions.Add("WarheadDisarm", b => ((IMyWarhead)b).IsArmed = false);
-            actions.Add("WarheadCountdownStart", b => ((IMyWarhead)b).StartCountdown());
-            actions.Add("WarheadCountdownStop", b => ((IMyWarhead)b).StopCountdown());
-            actions.Add("WarheadDetonate", b => ((IMyWarhead)b).Detonate());
-            //Weapons
+
+            string subsystem = "Subsystem";
+            commandName = "Default";
+            //TurretSubsystemDefault
+            actions.Add($"{blockName}{subsystem}{commandName}", b => ((IMyLargeTurretBase)b).SetTargetingGroup(""));
+            //ControllerSubsystemDefault
+            actions.Add($"{controller}{subsystem}{commandName}", b => ((IMyTurretControlBlock)b).SetTargetingGroup(""));
+
+            commandName = "Weapons";
+            //TurretSubsystemWeapons
+            actions.Add($"{blockName}{subsystem}{commandName}", b => ((IMyLargeTurretBase)b).SetTargetingGroup(commandName));
+            //ControllerSubsystemWeapons
+            actions.Add($"{controller}{subsystem}{commandName}", b => ((IMyTurretControlBlock)b).SetTargetingGroup(commandName));
+
+            commandName = "Propulsion";
+            //TurretSubsystemPropulsion
+            actions.Add($"{blockName}{subsystem}{commandName}", b => ((IMyLargeTurretBase)b).SetTargetingGroup(commandName));
+            //ControllerSubsystemPropulsion
+            actions.Add($"{controller}{subsystem}{commandName}", b => ((IMyTurretControlBlock)b).SetTargetingGroup(commandName));
+
+            commandName = "PowerSystems";
+            //TurretSubsystemPowerSystems
+            actions.Add($"{blockName}{subsystem}{commandName}", b => ((IMyLargeTurretBase)b).SetTargetingGroup(commandName));
+            //ControllerSubsystemPowerSystems
+            actions.Add($"{controller}{subsystem}{commandName}", b => ((IMyTurretControlBlock)b).SetTargetingGroup(commandName));
+
+            //Vents==============================
+            blockName = "Vent";
+            commandName = "pressurize";
+            //VentPressurize
+            actions.Add($"{blockName}{commandName}", b => ((IMyAirVent)b).Depressurize = false);
+            //VentDepressurize
+            actions.Add($"{blockName}De{commandName}", b => ((IMyAirVent)b).Depressurize = true);
+
+            //Warheads===========================
+            blockName = "Warhead";
+            //WarheadArm
+            actions.Add($"{blockName}Arm", b => ((IMyWarhead)b).IsArmed = true);
+            //WarheadDisarm
+            actions.Add($"{blockName}Disarm", b => ((IMyWarhead)b).IsArmed = false);
+            commandName = "Countdown";
+            //WarheadCountdownStart
+            actions.Add($"{blockName}{commandName}Start", b => ((IMyWarhead)b).StartCountdown());
+            //WarheadCountdownStop
+            actions.Add($"{blockName}{commandName}Stop", b => ((IMyWarhead)b).StopCountdown());
+            //WarheadDetonate
+            actions.Add($"{blockName}Detonate", b => ((IMyWarhead)b).Detonate());
+
+            //Weapons============================
             actions.Add("WeaponFireOnce", b => ((IMyUserControllableGun)b).ShootOnce());
-            //Wheels
-            actions.Add("SuspensionHeightPositive", b => ((IMyMotorSuspension)b).Height = 9000);
-            actions.Add("SuspensionHeightNegative", b => ((IMyMotorSuspension)b).Height = -9000);
-            actions.Add("SuspensionHeightZero", b => ((IMyMotorSuspension)b).Height = 0);
-            actions.Add("SuspensionPropulsionPositive", b => ((IMyMotorSuspension)b).PropulsionOverride = 1);
-            actions.Add("SuspensionPropulsionNegative", b => ((IMyMotorSuspension)b).PropulsionOverride = -1);
-            actions.Add("SuspensionPropulsionZero", b => ((IMyMotorSuspension)b).PropulsionOverride = 0);
+
+            //Wheels=============================
+            blockName = "Suspension";
+            commandName = "Height";
+            //SuspensionHeightPositive
+            actions.Add($"{blockName}{commandName}{positive}", b => ((IMyMotorSuspension)b).Height = 9000);
+            //SuspensionHeightNegative
+            actions.Add($"{blockName}{commandName}{negative}", b => ((IMyMotorSuspension)b).Height = -9000);
+            //SuspensionHeightZero
+            actions.Add($"{blockName}{commandName}Zero", b => ((IMyMotorSuspension)b).Height = 0);
+            commandName = "Propulsion";
+            //SuspensionPropulsionPositive
+            actions.Add($"{blockName}{commandName}{positive}", b => ((IMyMotorSuspension)b).PropulsionOverride = 1);
+            //SuspensionPropulsionNegative
+            actions.Add($"{blockName}{commandName}{negative}", b => ((IMyMotorSuspension)b).PropulsionOverride = -1);
+            //SuspensionPropulsionZero
+            actions.Add($"{blockName}{commandName}Zero", b => ((IMyMotorSuspension)b).PropulsionOverride = 0);
             //MergeBlock?
             return actions;
         }
@@ -5436,57 +5270,6 @@ namespace IngameScript
             public IColorCoder getCoderDirect(string name)
             { return colorPalette[name]; }
         }
-
-        //Returns true if a custom color has been retrieved, false otherwise.
-        /*private bool tryGetPaletteFromConfig(Action<string> troubleLogger, LimitedMessageLog textLog, 
-            Dictionary<string, IColorCoder> colorPalette, Color color, IColorCoder colorCoder, 
-            MyIniValue iniValue, ColorCoderLow lowGood, ColorCoderHigh highGood, string targetSection, 
-            string targetThreshold, string defaultValue, bool logKeyGeneration, ref bool configAltered)
-        {
-            string targetKey = $"Color{targetThreshold}";
-            //We'll go ahead and take a peak at the ini so we can make some decisions.
-            iniValue = _iniReadWrite.Get(targetSection, targetKey);
-            if (iniValue.IsEmpty)
-            {
-                //We didn't even find one of these required keys. Generate a new one.
-                _iniReadWrite.Set(targetSection, targetKey, defaultValue);
-                //We won't commmit the change to the PB's CustomData just yet. Instead, we'll set a
-                //flag that'll let us know we need to do that back in evaluateInit
-                configAltered = true;
-                if (logKeyGeneration)
-                {
-                    textLog.addNote($"{targetKey} key was missing from block '{Me.CustomName}' and " +
-                      $"has been regenerated.");
-                }
-                return false;
-            }
-            //If we did find the requested key...
-            else
-            {
-                string targetValue = iniValue.ToString().ToLowerInvariant();
-                if (targetValue == defaultValue.ToLowerInvariant())
-                //The config is just the default value. We don't need to bother with anything else.
-                { return false; }
-                else
-                //This isn't the default value, so we should probably figure out what it says.
-                {
-                    //Attempt to read the color
-                    if (tryGetColorFromConfig(troubleLogger, colorPalette, _iniReadWrite, iniValue, Me, 
-                        ref color, ref colorCoder, targetSection, targetKey))
-                    //We found and read the color, which should now be stored in both the color
-                    //and colorCoder variables. Last step is to update lowGood and highGood
-                    {
-                        lowGood.tryAssignColorByName(targetThreshold, color);
-                        highGood.tryAssignColorByName(targetThreshold, color);
-                        return true;
-                    }
-                    else
-                    //We hit some kind of snag. ColorFromConfig should have already logged the error,
-                    //so the only thing we need to do is declare that we didn't find a color.
-                    { return false; }
-                }
-            }
-        }*/
 
         //Checks the specified ini section for the specified key. If the key is found, returns true.
         //If the key is absent, generate a new key with a defualt value and potentially log that 
@@ -5759,7 +5542,7 @@ namespace IngameScript
                     $"the property '{propertyName}'. If one was specified, make sure that it matches the " +
                     $"type '{propertyDef.TypeName}.'");
                 }
-                PretendThereWasNoPart:
+            PretendThereWasNoPart:
                 //At this point, we either have a functional ActionPart, or a story to tell. Time to
                 //head home.
                 return retreivedPart;
@@ -5807,103 +5590,6 @@ namespace IngameScript
             }
         }
 
-        //Checks an iniReader for a key containing config data for a color. If a key is found and the
-        //  color is retrieved, returns true and modifies the color reference. If no key is found, 
-        //  returns false. If a key is found but can't be read, returns false and adds an error to 
-        //  the errors reference.
-        //string errors: The running error log
-        //Color color: The color that will store any colors found
-        //string prefix: The prefix of the ini key that we're looking for. This may be a surface 
-        //  designation, the name of an MFD, or something new that I haven't thought of yet.
-        //string target: The target of the ini key we're looking for. This will generally be 
-        //  ForeColor or BackColor.
-        //string sectionTag: What section of the ini we should be looking for configuration in. 
-        //  Usually, this will be SCRIPT_TAG.
-        //MyIni iniReader: The ini reader containing a parse of the target block's CustomData.
-        //IMyTerminalBlock block: The block that this configuration is found on, for error reporting
-        //  purposes.
-        //BAD (20240612): Why do I have to always be passing color coders into this again?
-        /*public bool tryGetColorFromConfig(Action<string> troubleLogger, Dictionary<string, IColorCoder> colorPalette,
-            MyIni iniReader, MyIniValue iniValue, IMyTerminalBlock block, ref Color color, ref IColorCoder colorCoder, 
-            string sectionTag, string targetKey)
-        {
-            //How we will describe this key's location in error messages
-            string errorLocation = $"Block '{block.CustomName}', section {sectionTag}, key {targetKey}";
-
-            iniValue = iniReader.Get(sectionTag, targetKey);
-            //20230215: Yes, it seems like there should be a more effecient order this could be done 
-            //in. No, I don't think there actually is. We can't use the raw string as a dictionary 
-            //key because they may not be consistent across config. And we have to parse the integers
-            //in order to apply the formatting to them, which we need in order to avoid the possibility
-            //that a value less than 100 would result in an identifier string that could collide with 
-            //a different identifier string.
-            if (!iniValue.IsEmpty)
-            {
-                //Split the data that we found on a comma delimiter.
-                string[] elements = iniValue.ToString().Split(',').Select(p => p.Trim()).ToArray();
-                //If we got three comma seperated elements, we have an RGB value.
-                if (elements.Length == 3)
-                {
-                    int counter = 0;
-                    int[] values = new int[3];
-                    //The RGB values of this color will serve as its key in the colorPalette dictionary
-                    string elementsAsKey = "";
-                    //While we haven't gotten all three colors, and if we haven't failed yet...
-                    while (counter < 3)
-                    {
-                        //Try to parse this element
-                        if (!Int32.TryParse(elements[counter], out values[counter]))
-                        {
-                            //If we can't parse this element, we'll log an error and call it a day
-                            troubleLogger($"{errorLocation}, element {counter} could not be " +
-                                $"parsed as an integer.");
-                            return false;
-                        }
-                        elementsAsKey += values[counter].ToString("D3");
-                        counter++;
-                    }
-                    //If we reach this point, we know we have three integer values we can plug into
-                    //a color.
-                    //If we already have an object for this particular color...
-                    if (colorPalette.TryGetValue(elementsAsKey, out colorCoder))
-                    //... Asign the color variable and call it a day
-                    {
-                        color = colorCoder.getColorCode(-1);
-                        return true;
-                    }
-                    //If we haven't encountered this color before...
-                    else
-                    //...Create new objects for it, add it to the dictionary, then call it a day.
-                    {
-                        color = new Color(values[0], values[1], values[2]);
-                        colorCoder = new ColorCoderMono(color);
-                        colorPalette.Add(elementsAsKey, colorCoder);
-                        return true;
-                    }
-                }
-                //If we didn't get three comma-seperated values, we might have a pre-defined color
-                else
-                {
-                    //Check to see if the string held in the iniValue is a key in the colorPalette dictionary
-                    if (colorPalette.TryGetValue(iniValue.ToString().ToLowerInvariant(), out colorCoder))
-                    //If it is, assign the color variable and call it a day
-                    {
-                        color = colorCoder.getColorCode(-1);
-                        return true;
-                    }
-                    else
-                    //If it isn't, complain.
-                    {
-                        troubleLogger($"{errorLocation} contains unreadable color '{iniValue.ToString()}'.");
-                        return false;
-                    }
-                }
-            }
-            //If we didn't find something at the designated key, fail silently
-            else
-            { return false; }
-        }*/
-
         //Returns either a common palette color name, or the RGB value of the color in question.
         public static string getStringFromColor(Color color)
         {
@@ -5924,6 +5610,7 @@ namespace IngameScript
         }
 
         //Refering to the distributor cap on an internal combustion engine. Hooray, metaphors.
+        /* 20250515: Discontinued in favor of the new Distributor object.
         public class UpdateDistributor
         {
             //This value is the number of potential update tics that should be skipped between each
@@ -5966,6 +5653,177 @@ namespace IngameScript
                 }
                 return fire;
             }
+        }*/
+
+        internal class Distributor
+        {
+            Dictionary<string, PeriodicEvent> periodics;
+            Dictionary<string, Cooldown> cooldowns;
+
+            internal Distributor()
+            {
+                periodics = new Dictionary<string, PeriodicEvent>();
+                cooldowns = new Dictionary<string, Cooldown>();
+            }
+
+            internal bool tryAddPeriodic(string name, PeriodicEvent periodic)
+            {
+                if (periodics.ContainsKey(name))
+                { return false; }
+                else
+                {
+                    periodics.Add(name, periodic);
+                    return true;
+                }
+            }
+
+            internal void addOrReplacePeriodic(string name, PeriodicEvent periodic)
+            {
+                if (periodics.ContainsKey(name))
+                { periodics[name] = periodic; }
+                else
+                { periodics.Add(name, periodic); }
+            }
+
+            internal int getPeriodicFrequency(string name)
+            //{ return periodics[name]?.frequency ?? -1; } //Doesn't work? Doesn't null coalesce, at least
+            {
+                PeriodicEvent targetEvent;
+                if (periodics.TryGetValue(name, out targetEvent))
+                { return targetEvent.frequency; }
+                else
+                { return -1; }
+            }
+
+            internal void removePeriodic(string name)
+            { periodics.Remove(name); }
+
+            internal void clearPeriodics()
+            { periodics.Clear(); }
+
+            internal bool tryAddCooldown(string name, int duration, out string result)
+            {
+                Cooldown existing;
+                if (!cooldowns.TryGetValue(name, out existing))
+                {
+                    Cooldown newCooldown = new Cooldown(duration, name);
+                    cooldowns.Add(name, newCooldown);
+                    result = "";
+                    return true;
+                }
+                else
+                {
+                    result = existing.getTimeRemainingMessage();
+                    return false;
+                }
+            }
+
+            internal void tic()
+            {
+                foreach (PeriodicEvent periodic in periodics.Values)
+                { periodic.tic(); }
+                //Uses a while loop to avoid a 'collection modified' exception when we remove finished
+                //cooldowns.
+                Cooldown cooldown;
+                int index = 0;
+                while (index < cooldowns.Count)
+                {
+                    cooldown = cooldowns.Values.ElementAt(index);
+                    if (cooldown.isFinished())
+                    { cooldowns.Remove(cooldown.name); }
+                    else
+                    { index++; }
+                }
+                /*
+                foreach (Cooldown cooldown in cooldowns.Values)
+                {
+                    if (cooldown.isFinished())
+                    { cooldowns.Remove(cooldown.name); }
+                }*/
+            }
+
+            public string checkCooldown(string name)
+            {
+                Cooldown cooldown;
+                if (cooldowns.TryGetValue(name, out cooldown))
+                { return cooldown.getTimeRemainingMessage(); }
+                else
+                { return $"{name} is not on cooldown."; }
+            }
+
+            internal string debugPrintContents()
+            {
+                string outcome = "Contained periodics:\n";
+                foreach (KeyValuePair<string, PeriodicEvent> pair in periodics)
+                { outcome += $" -{pair.Key} with frequency {pair.Value.frequency}\n"; }
+                outcome += "Contained cooldowns:\n";
+                foreach (KeyValuePair<string, Cooldown> pair in cooldowns)
+                { outcome += $" -{pair.Key} with a remaining duration of {pair.Value.position}\n"; }
+                return outcome;
+            }
+        }
+
+        internal class PeriodicEvent
+        {
+            internal int frequency { get; private set; }
+            int position;
+            Action onFire;
+
+            internal PeriodicEvent(int frequency, Action onFire)
+            {
+                this.frequency = frequency;
+                position = frequency;
+                this.onFire = onFire;
+            }
+
+            internal void tic()
+            {
+                position--;
+                if (position <= 0)
+                {
+                    position = frequency;
+                    onFire.Invoke();
+                }
+            }
+        }
+
+        internal class Cooldown
+        {
+            public int position { get; private set; }
+            //Temporary? I need the name of the cooldown to remove it from the dictionary of cooldowns,
+            //but I suspect it's going to pitch a fit when I try.
+            internal string name { get; private set; }
+
+            internal Cooldown(int duration, string name)
+            {
+                position = duration;
+                this.name = name;
+            }
+
+            internal bool isFinished()
+            {
+                position--;
+                if (position <= 0)
+                { return true; }
+                else
+                { return false; }
+            }
+
+            internal string getTimeRemainingMessage()
+            { return $"{name} is on cooldown for the next {(int)(position * 1.4)} seconds."; }
+        }
+
+        internal void setUpdateDelay(int delay = 0, Distributor distributor = null)
+        {
+            Action updateAction = () =>
+            {
+                compute();
+                update();
+                _log.tic();
+            };
+            PeriodicEvent periodicUpdate = new PeriodicEvent(delay, updateAction);
+            _distributor.addOrReplacePeriodic("UpdateDelay", periodicUpdate);
+            _log.scriptUpdateDelay = delay;
         }
 
         //The object formerly known as LimitedErrorLog.
@@ -7006,9 +6864,9 @@ namespace IngameScript
             public void takeAction(bool isOnAction)
             {
                 if (isOnAction)
-                { subjectMFD.trySetPage(pageOn); }
+                { subjectMFD.trySetPageByName(pageOn); }
                 else
-                { subjectMFD.trySetPage(pageOff); }
+                { subjectMFD.trySetPageByName(pageOff); }
             }
 
             //Determine if this ActionPlan has any actions defined
@@ -7257,15 +7115,18 @@ namespace IngameScript
         public class ActionPlanUpdate : IHasActionPlan, IHasConfig
         {
             //A reference to the script's update distributor, ie, the thing we'll be manipulating.
-            UpdateDistributor distributor;
+            //UpdateDistributor distributor;
+            //The method we use to manipulate the script's update delay is in the Program itself.
+            //We'll need a reference to it.
+            Program program;
             //How long the delay will be when this ActionPlan is on
             public int delayOn { get; internal set; }
             //How long the delay will be when this ActionPlan is off
             public int delayOff { get; internal set; }
 
-            public ActionPlanUpdate(UpdateDistributor distributor)
+            public ActionPlanUpdate(Program program)
             {
-                this.distributor = distributor;
+                this.program = program;
                 delayOn = 0;
                 delayOff = 0;
             }
@@ -7275,9 +7136,9 @@ namespace IngameScript
             public void takeAction(bool isOnAction)
             {
                 if (isOnAction)
-                { distributor.setDelay(delayOn); }
+                { program.setUpdateDelay(delayOn); }
                 else
-                { distributor.setDelay(delayOff); }
+                { program.setUpdateDelay(delayOff); }
             }
 
             //Determine if this ActionPlan has any actions defined (This will probably never be called)
@@ -8016,6 +7877,8 @@ namespace IngameScript
             void update();
             //Perform an update without considering if one is needed.
             void forceUpdate();
+            //Used to force sprite syncing for reports. Other objects get dummy methods.
+            void refresh();
         }
 
         //Intreface implemented by non-MFD reportables
@@ -8035,6 +7898,8 @@ namespace IngameScript
             internal int pageNumber { get; private set; }
             //The name of the report currently being displayed by the MFD.
             internal string pageName { get; private set; }
+            //The actual Reportable this MFD is currently displaying.
+            private IReportable currentPage;
 
             public MFD(string programName)
             {
@@ -8042,16 +7907,18 @@ namespace IngameScript
                 pages = new Dictionary<string, IReportable>(StringComparer.OrdinalIgnoreCase);
                 pageNumber = 0;
                 pageName = "";
+                currentPage = null;
             }
 
             //Add a page to this MFD.
             public void addPage(string name, IReportable reportable)
             {
-                //Add this new page to the MFD
                 pages.Add(name, reportable);
-                //If we don't have a pageName yet...
-                if (pageName == "")
-                { pageName = name; }
+                if (currentPage == null)
+                {
+                    currentPage = reportable;
+                    pageName = name;
+                }
             }
 
             //Returns the number of pages in this MFD
@@ -8076,17 +7943,14 @@ namespace IngameScript
                     { pageNumber = pages.Count - 1; }
                 }
                 //Get the name of whatever page we've ended up at
-                pageName = pages.ToArray()[pageNumber].Key;
-                //Prepare the surface to display the new page.
-                pages[pageName].setProfile();
-                //Attempt to update the surface right now to show the new page.
-                /* CHECK: Removed in an attempt to convince servers to send clients new sptires.
-                pages[pageName].update();
-                */
+                //pageName = pages.ToArray()[pageNumber].Key;
+                pageName = pages.Keys.ToArray()[pageNumber];
+
+                finalizePage();
             }
 
             //Go to the page with the specified name
-            public bool trySetPage(string name)
+            public bool trySetPageByName(string name)
             {
                 //If the page is actually in this MFD...
                 if (pages.ContainsKey(name))
@@ -8094,28 +7958,48 @@ namespace IngameScript
                     pageName = name;
                     //Get the index of whatever page we've ended up at.
                     pageNumber = pages.Keys.ToList().IndexOf(name);
-                    //Prepare the surface to display the new page.
-                    pages[pageName].setProfile();
-                    //Attempt to update the surface right now to show the new page.
-                    /* CHECK: Removed in an attempt to convince servers to send clients new sprites.
-                    pages[pageName].update();
-                    */
+
+                    finalizePage();
                     return true;
                 }
                 else
                 { return false; }
             }
 
+            private void finalizePage()
+            {
+                IReportable newPage = pages[pageName];
+                bool needsRefresh = false;
+                //There is a very specific bug that ocurrs when flipping from a Keen app to one of
+                //Shipware's reports, which can be handled by refreshing the report after it's drawn.
+                //This is where we decide if we need to do that.
+                if (currentPage is GameScript && newPage is Report)
+                { needsRefresh = true; }
+                currentPage = newPage;
+                setProfile();
+                //Attempt to update the surface right now to show the new page.
+                /* CHECK: Removed in an attempt to convince servers to send clients new sptires.
+                 * 20250515: Re-enabled in light of the newly added sprite refresh system.
+                 */
+                update();
+
+                if (needsRefresh)
+                { refresh(); }
+            }
+
             //To set the surface up for the MFD, we simply call setProfile on whatever page we're on.
             public void setProfile()
-            { pages[pageName].setProfile(); }
+            { currentPage.setProfile(); }
 
             //To update the MFD, we simply call update on whatever page we're on.
             public void update()
-            { pages[pageName].update(); }
+            { currentPage.update(); }
 
             public void forceUpdate()
-            { pages[pageName].forceUpdate(); }
+            { currentPage.forceUpdate(); }
+
+            public void refresh()
+            { currentPage.refresh(); }
         }
 
         public class GameScript : IReportable, IHasColors
@@ -8144,6 +8028,10 @@ namespace IngameScript
             { }
 
             public void forceUpdate()
+            { }
+
+            //Keen's scripts run on the client, so they don't need to be refreshed.
+            public void refresh()
             { }
 
             //Prepare this suface to display its ingame script.
@@ -8176,6 +8064,10 @@ namespace IngameScript
             public string title { get; set; }
             //The title gets its very own anchor.
             Vector2 titleAnchor;
+            //To force synchronization of sprites to clients in multiplayer, we alter the number
+            //of sprites drawn. This boolean tracks if the 'refresh sprite' is currently being
+            //included or not.
+            bool includeRefreshSprite;
 
             public Report(IMyTextSurface surface, List<IHasElement> elements, string title = "", float fontSize = 1f, string font = "Debug")
             {
@@ -8201,58 +8093,78 @@ namespace IngameScript
                 //NOTE: Until further notice, setAnchors will not be called during construction.
                 //Status Date: 20201229
                 /*setAnchors(3);*/
+                //We won't include a refresh sprite until we're explicitly told to do so. 
+                includeRefreshSprite = false;
             }
 
-            public void setAnchors(int columns, StringBuilder _sb)
+            public void setAnchors(int columns, float padLeft, float padRight,
+                float padTop, float padBottom, bool titleObeysPadding, StringBuilder _sb)
             {
                 //Malware's code for determining the viewport offset, which is the difference 
-                //between an LCD's texture size and surface size. I have only the vaguest notions
-                //of how it works.
+                //between an LCD's texture size and surface size. 
+                //For quite a while I thought it was doing something magical, but no, it really is 
+                //just the upper-left corner and the height and width.
+                //Initially, it describes where the viewport (Our visible screen area) lies on the 
+                //texture (The square image that we actually draw things on, which is always larger
+                //or equal to the surface size). But adjusting the position and size of the viewport 
+                //is also how we'll apply padding values to this report.
                 RectangleF viewport = new RectangleF((surface.TextureSize - surface.SurfaceSize) / 2f,
                     surface.SurfaceSize);
-                //A string builder that we have to have before MeasureStringInPixels will tell us
-                //the dimensions of our element
+
+                //To apply the left and top offsets, we need to adjust the anchor point and then trim the
+                //height and width to compensate.
+                float offsetLeft = (padLeft / 100) * surface.SurfaceSize.X;
+                float offsetTop = (padTop / 100) * surface.SurfaceSize.Y;
+                viewport.X += offsetLeft;
+                viewport.Width -= offsetLeft;
+                viewport.Y += offsetTop;
+                viewport.Height -= offsetTop;
+
+                //For the right and bottom, all we need to do is reduce height and width.
+                viewport.Width -= (padRight / 100) * surface.SurfaceSize.X;
+                viewport.Height -= (padBottom / 100) * surface.SurfaceSize.Y;
+
                 _sb.Clear();
-                //If there's no title, we don't need to leave any space for it.
-                float titleY = 0;
-                //If there's a title, though, we'll need to make room for that.
+                //Assume there's no title
+                float titleHeight = 0;
                 if (!string.IsNullOrEmpty(title))
                 {
-                    //Feed our title into the stringbuilder
+                    //Figure out how much vertical space the title's text requires.
                     _sb.Append(title);
-                    //Figure out how much vertical space we'll need to leave off to accomodate it.
-                    titleY = surface.MeasureStringInPixels(_sb, font, fontSize).Y;
+                    titleHeight = surface.MeasureStringInPixels(_sb, font, fontSize).Y;
                     //Create the titleAnchor that we'll lash the title sprite to.
-                    titleAnchor = new Vector2(surface.SurfaceSize.X / 2, 0);
-                    titleAnchor += viewport.Position;
+                    if (titleObeysPadding)
+                    { titleAnchor = new Vector2(viewport.Width / 2 + viewport.X, viewport.Y); }
+                    else
+                    {
+                        //We've already applied the padding values to the viewport. If we want the
+                        //title anchor to be independent of those but still take into account any
+                        //differences between TextureSize and SurfaceSize, we need to go back to 
+                        //the original numbers.
+                        titleAnchor = new Vector2(surface.TextureSize.X / 2,
+                            (surface.TextureSize.Y - surface.SurfaceSize.Y) / 2);
+                        //The element anchors will need to be positioned so they don't overlap with 
+                        //the title. But if the padding value is large enough, that won't be an issue.
+                        titleHeight = Math.Max(titleHeight - padTop, 0);
+                    }
                 }
-                //The number of rows we'll have is the number of elements, divided by how many 
-                //columns we're going to display them across.
+
+                //With the title addressed, we can start gathering the information we need to build
+                //the rest of the anchors.
                 int rows = (int)(Math.Ceiling((double)elements.Count() / columns));
-                //The width of a column is our horizontal space divided by the number of columns
-                float columnWidth = surface.SurfaceSize.X / columns;
-                //The height of a row is the vertical space, minus room for the title, divided by
-                //the number of rows.
-                float rowHeight = (surface.SurfaceSize.Y - titleY) / rows;
-                //Store our current position in the row.
+                float columnWidth = viewport.Width / columns;
+                float rowHeight = (viewport.Height - titleHeight) / rows;
                 int rowCounter = 1;
-                //Handles for the Vectors we'll be working with: One for our current position in the
-                //grid, one that will store our finalized anchor, and one representing how much space
-                //this sprite will take up.
                 Vector2 sectorCenter, anchor, elementSize;
-                //Before we start the loop, we need to make sure our entry point is in the right 
-                //place. We'll start by putting it in the middle of the first row and column
+
+                //We start off by figuring where the center of the first grid sector is. Where exactly
+                //the anchor will be placed we'll work out in the first part of the loop.
                 sectorCenter = new Vector2(columnWidth / 2, rowHeight / 2);
-                //Then we'll apply the viewport offset
                 sectorCenter += viewport.Position;
-                //Last, we'll adjust the Y based on the height of the title. If there's no title,
-                //this will be 0.
-                sectorCenter.Y += titleY;
+                sectorCenter.Y += titleHeight;
+
                 for (int i = 0; i < elements.Count(); i++)
                 {
-                    //If a tally is null, we can safely ignore it.
-                    //TODO: Monitor. It /shouldn't/ pitch a fit about uninitiated anchors if it
-                    //never has to use them, but you never can tell.
                     if (elements[i] != null)
                     {
                         //Clear the contents of the StringBuilder
@@ -8276,6 +8188,11 @@ namespace IngameScript
                     if (rowCounter == columns)
                     {
                         sectorCenter.X = columnWidth / 2;
+                        //20250129: Apply the X portion of the viewport offset to correctly find the 
+                        //leftmost edge of the screen. The offset does not need to be applied to the 
+                        //Y value, because it's ultimately based off the initial positioning of the 
+                        //first row, which does receive the offset.
+                        sectorCenter.X += viewport.Position.X;
                         sectorCenter.Y += rowHeight;
                         rowCounter = 1;
                     }
@@ -8299,7 +8216,15 @@ namespace IngameScript
                 MySprite sprite;
                 using (MySpriteDrawFrame frame = surface.DrawFrame())
                 {
-                    //If this report has a title, we'll start by drawing it.
+                    //If we're currently drawing the refresh sprite, we'll start with it.
+                    if (includeRefreshSprite)
+                    {
+                        //Both the position and the size of the sprite will be 0, 0.
+                        Vector2 zeroes = new Vector2(0, 0);
+                        sprite = MySprite.CreateSprite("IconEnergy", zeroes, zeroes);
+                        frame.Add(sprite);
+                    }
+                    //Next comes the title sprite, if available
                     if (!string.IsNullOrEmpty(title))
                     {
                         sprite = MySprite.CreateText(title, font, surface.ScriptForegroundColor,
@@ -8328,20 +8253,32 @@ namespace IngameScript
             public void forceUpdate()
             { update(); }
 
+            //When run, forces the server and client to re-sync this report's sprites on the next 
+            //call to update(). Has no effect in single player (probably)
+            public void refresh()
+            { includeRefreshSprite = !includeRefreshSprite; }
+
             //Prepare this surface for displaying the report.
             public void setProfile()
             {
+                //TESTING PURPOSES
                 surface.ContentType = ContentType.SCRIPT;
                 surface.Script = "";
                 surface.ScriptForegroundColor = foreColor;
                 surface.ScriptBackgroundColor = backColor;
+            }
+
+            //The code for the 'thunderbolt transitions', previously in the setProfile method above.
+            //It's been completely replaced by the new Sprite Refresher state machine implementation,
+            //but I just couldn't bear to part with it. Stupid nostolgia.
+            /*
+            public void transition()
+            {
                 //To save on data transfer in multiplayer, the server only sends out updated sprites
                 //if they've 'changed enough'. But sometimes (Especially when using MFDs), our 
                 //elements won't meet that bar. So this iteration of setProfile will draw a throwaway
                 //image in place of each of the elements, hopefully prompting the server to send out
                 //the new sprites.
-                //A handle for elements we'll be working with
-                /*IHasElement element;*/
                 //The sprite we'll be using to convey our information
                 MySprite sprite;
                 Vector2 spriteSize = new Vector2(100);
@@ -8360,7 +8297,7 @@ namespace IngameScript
                         frame.Add(sprite);
                     }
                 }
-            }
+            }*/
         }
 
         //An interface shared by various Broker objects.
@@ -8614,6 +8551,13 @@ namespace IngameScript
 
             public void forceUpdate()
             { surface.WriteText(prepareText(broker.getData())); }
+
+            //I'm not sure how exactly text surfaces work. I think that under the hood, they're
+            //essentially sprites, yet they never seem to have any probelm with text syncing.
+            //Perhaps the text is sent to clients, and then the sprite is rendered locally?
+            //Anyway, WOTs don't need to do anything when refresh is called.
+            public void refresh()
+            { }
 
             //Prepare this suface to display its text, and write the initial text.
             public void setProfile()
@@ -9337,6 +9281,8 @@ namespace IngameScript
             //If the script we're logging has an update delay, we'll have an entry for that in
             //the title. This int stores the current delay setting.
             public int scriptUpdateDelay { private get; set; }
+            //Current status of any active state machines.
+            public string machineStatus { private get; set; }
             //Apparently, you're supposed to try to avoid allocating new objects when scripting
             //for SE. So instead of creating a new string every time toString() is called, 
             //we'll just overwrite the contents of this one.
@@ -9370,6 +9316,7 @@ namespace IngameScript
                 entriesText = "";
                 this.title = title;
                 scriptTag = "";
+                machineStatus = "";
                 this.maxEntries = maxEntries;
                 hasUpdate = false;
                 scriptUpdateDelay = 0;
@@ -9446,6 +9393,9 @@ namespace IngameScript
                 if (scriptUpdateDelay != 0)
                 //...include a notice.
                 { _sb.Append($"Current Update Delay: {scriptUpdateDelay}\n"); }
+                //MachineStatus is an empty string if there's no status to report, so we can just
+                //plug this in directly.
+                _sb.Append($"{machineStatus}\n");
                 //Get the entriesText and tack it on
                 _sb.Append(entriesText);
                 //Chuck the string we just built out to whom it may concern.
