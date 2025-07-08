@@ -33,7 +33,7 @@ namespace IngameScript
     partial class Program : MyGridProgram
     {
         //The version number of this code
-        const double _VERSION = .802;
+        const double _VERSION = .8021;
         //The default ID of the script, to be used if no custom ID is set.
         const string _DEFAULT_ID = "Shipware";
         //The prefix used to identify all components of the script, regardless of changes the user
@@ -8699,8 +8699,10 @@ namespace IngameScript
                     //All of the vanilla hydrogen engines end with HydrogenEngine. Any modded blocks 
                     //that follow this convention will also work with this tally. Assuming their 
                     //DetailInfo is formatted the same way...
+                    //UPDATE 20250703: Added a check specifically for the new fusion reactors. 
                     if (prospectiveEngine != null
-                        && prospectiveEngine.BlockDefinition.SubtypeId.EndsWith("HydrogenEngine"))
+                        && (prospectiveEngine.BlockDefinition.SubtypeId.EndsWith("HydrogenEngine")
+                         || prospectiveEngine.BlockDefinition.SubtypeId == "LargePrototechReactor"))
                     {
                         engines.Add(prospectiveEngine);
                         return true;

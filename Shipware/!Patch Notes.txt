@@ -212,37 +212,50 @@ v 0.802 (Count 99615)
  -Action Handlers are no longer case sensitive.
  -Using Rotor Action Handlers on a non-Advanced rotor will no longer cause an exception.
  -Under the hood: Optimized internal Action Handler listing to reduce character count.
+
+v 0.8021 (Count 99671)
+ -Gas tallies now recognize the Prototech Fusion Reactor.
  
 v 0.803
  -!TODO! Character squish. Might be able to make some ground in AutoPopulate, might be able to 
          find some more instances of common code in the Tally Handler implementation (Virtual methods
 		 overriden as needed as opposed to all abstract)(May need to dip into Generics for this). Could 
-		 probably implement some form of the old 'error shelf' idea, or find other savings
- -!TODO! Multi-tic evaluate and AutoPopulate (20240304). Investigate Using statements within the 
-         sequencers (20250508)
+		 probably implement some form of the old 'error shelf' idea, or find other savings. Also replacing
+		 all the Trues and Falses with references to globals
+ -!TODO! Multi-tic Evaluate (20240304). Investigate Using statements within the sequencers (20250508)
  -!TODO! TerminalValues (20240910). Possibly build into TerminalProperties as -values instead of 
 		 making a seperate command.
- -!TODO! ResetReports as an ActionSet key (20240917)
- -!TODO! 'Simple' raycast module
- -!TODO! Global LimitedMessageLog? (20240221)
+ 
+v 0.804
+ -!TODO! Multi-tic AutoPopulate (20240304). Investigate Using statements within the sequencers (20250508)
+
+v 0.maybe
  -!TODO! Cyclers
  -!TODO! Combined Info Datatype - Combination of DetailInfo and CustomInfo
+ -!TODO! 'Simple' raycast module
  -!TODO! ActionSet IgnoreIGC toggle
- -!TODO! ShipwareCommon channel for script instances to identify themselves and communicate (20230426 and 20230518)
- -!TODO! AutoPopulate -allUnique
- -?TODO? APModified informational group (20240311)
- -?TODO? Remote command (20240422 and 20240423)
- -?TODO? Import / Insert / Delete
- -?TODO? APAllItems
- -?TODO? ActivationRequiresSet
- -?TODO? Typed action handlers / Generic APB? (20230425)
- -?TODO? PopulateSection (20230109)
+ -!TODO! RemoveTally and RemoveSet
+ -?TODO? AP expanded tally sets
  -?TODO? CustomData WOT multi-page capability (20230523).
- -*TODO* Color-code Warnings, Errors, and Messages? Maybe timestamps as well (Waiting on bug fixes)
+ -*TODO* Color-code Warnings, Errors, and Messages? Maybe timestamps as well [Waiting on bug fixes]
  -UNDOCUMENTED .801:  Added new ActionSet handlers CameraRaycastEnable and CameraRaycastDisable. 
   Note that cameras linked to the script's Raycasters have this function enabled automatically; 
   these handlers are included mostly to give you a way of turning the function off for a camera 
   that won't be used to perform Raycast scans anymore. 
+
+v 0.never
+ -!TODO! ResetReports as an ActionSet key (20240917) [Superceded by SpriteRefresh system]
+ -!TODO! Global LimitedMessageLog? (20240221)
+ -!TODO! ShipwareCommon channel for script instances to identify themselves and communicate (20230426 and 20230518)
+ -!TODO! AutoPopulate -allUnique [Not feasible or useful]
+ -?TODO? APModified informational group (20240311) [Can't create block groups from script]
+ -?TODO? Import / Insert / Delete [No longer relevant with the non-indexed PB config]
+ -?TODO? Remote command (20240422 and 20240423) [No way I have the characters for something like this]
+ -?TODO? APAllItems (20231027) [Doesn't really fit anymore]
+ -?TODO? ActivationRequiresSet [Niche application, character count]
+ -?TODO? Typed action handlers / Generic APB? (20230425) [Character count]
+ -?TODO? PopulateSection (20230109) [Mostly replaced by Clone]
+ -?TODO? TallyIGC [Character count. RIP.]
 
  General Information and Best Practices documentation section
  -Overview of Ini Format

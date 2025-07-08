@@ -38,6 +38,7 @@
   <Import Project="MDK/MDK.options.props" />
   <Import Project="MDK/MDK.paths.props" Condition="exists('MDK/MDK.paths.props')" />
   <ItemGroup>
+    <None Include="!Config Scraps\Piranha.ini" />
     <None Include="!Config Scraps\Crane.ini" />
     <None Include="!Config Scraps\Stork.ini" />
     <None Include="!Config Scraps\Barracuda 2.ini" />
@@ -65,6 +66,7 @@
     <None Include="!Pre-Git Version Archive\ShipWare 20241014 %28.801%29.cs" />
     <None Include="CodeJournal.cs" />
     <None Include="!Minified Version Archive\Shipware v.802.cs" />
+    <None Include="!Minified Version Archive\Shipware v.8021.cs" />
     <Compile Include="MDK\Bootstrapper.cs" />
     <AdditionalFiles Include="MDK\MDK.options.props">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
