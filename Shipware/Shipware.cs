@@ -33,7 +33,7 @@ namespace IngameScript
     partial class Program : MyGridProgram
     {
         //The version number of this code
-        const double _VERSION = .8021;
+        const double _VERSION = .803;
         //The default ID of the script, to be used if no custom ID is set.
         const string _DEFAULT_ID = "Shipware";
         //The prefix used to identify all components of the script, regardless of changes the user
@@ -52,6 +52,9 @@ namespace IngameScript
         //I'm making them constants in case I decide to do this again.
         const string _SOURCE_GROUP_NAME = "Source";
         const string _TARGET_GROUP_NAME = "Target";
+        //Possibly the cheekiest thing I've done in pursuit of a reduced character count.
+        const bool _TRUE = true;
+        const bool _FALSE = false;
         //An EventLog that will... log events.
         EventLog _log;
         //Used to read information out of a block's CustomData
@@ -154,12 +157,12 @@ namespace IngameScript
             _iniReadWrite = new MyIni();
             _iniRead = new MyIni();
             _sb = new StringBuilder();
-            _haveGoodConfig = false;
+            _haveGoodConfig = _FALSE;
             _lastGoodConfigStamp = DateTime.Now;
             //These are basically local variables that will be passed to other methods once we're 
             //done here.
             textLog = new LimitedMessageLog(_sb, 15);
-            firstRun = false;
+            firstRun = _FALSE;
             //One of the first things we need to do is figure out if this code version has changed, 
             //or if script has a custom tag. To do that, we check the Storage string.
             _iniReadWrite.TryParse(Storage);
@@ -175,7 +178,7 @@ namespace IngameScript
             _listener = IGC.RegisterBroadcastListener(_tag);
             _listener.SetMessageCallback(_tag);
             //The log that will give us feedback in the PB's Detail Info area
-            _log = new EventLog(_sb, $"Shipware v{_VERSION} - Recent Events", true);
+            _log = new EventLog(_sb, $"Shipware v{_VERSION} - Recent Events", _TRUE);
             //The meterMaid that will generate ASCII meters for our tallies
             _meterMaid = new MeterMaid(_sb);
             //If we have a custom tag, we want to have that information front and center in the log
@@ -196,7 +199,7 @@ namespace IngameScript
             _iniReadWrite.Clear();
             //Last step is to make some decisions based on the version number.
             if (lastVersion == -1)
-            { firstRun = true; }
+            { firstRun = _TRUE; }
             else if (lastVersion != _VERSION)
             { textLog.addNote($"Code updated from v{lastVersion} to v{_VERSION}."); }
 
@@ -216,7 +219,7 @@ namespace IngameScript
             }
             else
             {
-                ensureInitHasRequiredKeys(textLog, true);
+                ensureInitHasRequiredKeys(textLog, _TRUE);
             }
             textLog.addNote("Use the AutoPopulate command to generate basic configuration.");
             textLog.addNote("The Clone command can quickly distribute config across identical blocks.");
@@ -229,13 +232,13 @@ namespace IngameScript
         }
 
         //Assumes that PBConfig has already been loaded into _iniReadWrite
-        public void ensureInitHasRequiredKeys(LimitedMessageLog textLog, bool firstRun = false)
+        public void ensureInitHasRequiredKeys(LimitedMessageLog textLog, bool firstRun = _FALSE)
         {
             string initTag = $"{_SCRIPT_PREFIX}.Init";
             bool hasInitSection = _iniReadWrite.ContainsSection(initTag);
             //We only need to log individual key generation if there's already an init section. 
             bool logKeyGeneration = hasInitSection && !firstRun;
-            bool configAltered = false;
+            bool configAltered = _FALSE;
             string pbName = Me.CustomName;
 
             //If the Init section is missing entirely, we'll make one note for the entire lot.
@@ -293,17 +296,17 @@ namespace IngameScript
             bool[] includeDivider = new bool[]
             {
                 //Color palette
-                false,
-                false,
-                false,
-                false,
-                false,
+                _FALSE,
+                _FALSE,
+                _FALSE,
+                _FALSE,
+                _FALSE,
                 //Sprite refresh
-                true,
+                _TRUE,
                 //AutoPopulate
-                true,
-                true,
-                true
+                _TRUE,
+                _TRUE,
+                _TRUE
             };
 
             for (int i = 0; i < requiredKeys.Length; i++)
@@ -474,7 +477,7 @@ namespace IngameScript
                         {
                             string outcome = "No reply";
                             string replyChannel = null;
-                            bool receivingReply = false;
+                            bool receivingReply = _FALSE;
                             //Make our replyChannel equal to the first switch we come to.
                             //This is really not how switches are meant to be used, but it's worked so far.
                             Action setSwitchAsReplyChannel = () =>
@@ -487,7 +490,7 @@ namespace IngameScript
                             //If the first word in the IGC message is 'reply'...
                             if (argReader.Argument(0) == "reply")
                             {
-                                receivingReply = true;
+                                receivingReply = _TRUE;
                                 //We'll do a bit of redundant work and re-parse the originl argument.
                                 //Case sensitivity isn't required here, but the string we're getting
                                 //will likely have some formatting to it.
@@ -636,9 +639,9 @@ namespace IngameScript
                                     //PageCommand could also include the name of a specific page,
                                     //and the dictionary that page is stored in is case-sensitive.
                                     if (MFDPageCommand == "next")
-                                    { targetMFD.flipPage(true); }
+                                    { targetMFD.flipPage(_TRUE); }
                                     else if (MFDPageCommand == "prev")
-                                    { targetMFD.flipPage(false); }
+                                    { targetMFD.flipPage(_FALSE); }
                                     //If it isn't one of the easy commands, assume the user is trying 
                                     //to set the MFD to a specific page.
                                     else
@@ -1187,7 +1190,7 @@ namespace IngameScript
                             */
                             //The scheduler will take care of any log entries or other notifications.
                             if (_distributor.tryAddCooldown("ResetReports", 10, out outcome))
-                            { tryScheduleMachine(new SpriteRefreshMachine(this, _reports, true)); }
+                            { tryScheduleMachine(new SpriteRefreshMachine(this, _reports, _TRUE)); }
                             else
                             { _log.add(outcome); }
                             break;
@@ -1302,9 +1305,9 @@ namespace IngameScript
             {
                 //And we know what command the user is trying to give us...
                 if (actionCommand == "on")
-                { desiredState = true; }
+                { desiredState = _TRUE; }
                 else if (actionCommand == "off")
-                { desiredState = false; }
+                { desiredState = _FALSE; }
                 else if (actionCommand == "switch")
                 { desiredState = !targetSet.isOn; }
                 //If we don't know the command, complain. 
@@ -1401,12 +1404,12 @@ namespace IngameScript
         {
             GridTerminalSystem.GetBlockGroupWithName(groupName)?.GetBlocks(retrievedBlocks);
             if (retrievedBlocks.Count > 0)
-            { return true; }
+            { return _TRUE; }
             else
             {
                 //'trouble' is expected to contain something along the lines of "Clear Command".
                 trouble = $"Received {trouble}, but there is no {groupName} block group on the grid.";
-                return false;
+                return _FALSE;
             }
         }
 
@@ -1438,13 +1441,13 @@ namespace IngameScript
                 //checked to see if it works when there is an active machine.
                 if (newMachine.generateLogs && _activeMachine != null)
                 { _log.add($"{machineName} successfully added to scheduled tasks."); }
-                return true;
+                return _TRUE;
             }
             else
             //If the same type of machine is already in the queue...
             {
                 _log.add($"Cannot schedule {machineName} because an identical task is already scheduled.");
-                return false;
+                return _FALSE;
             }
         }
 
@@ -1619,13 +1622,13 @@ namespace IngameScript
             string roostHeader = $"{_SCRIPT_PREFIX}.{_DECLARATION_PREFIX}.ActionSet.Roost";
             //DEBUG USE
             //_debugDisplay.WriteText("Deciding if Roost needs writing\n", true);
-            if (!pbParse.ContainsSection(roostHeader) && !(excludedDeclarations?.Contains("Roost") ?? false))
+            if (!pbParse.ContainsSection(roostHeader) && !(excludedDeclarations?.Contains("Roost") ?? _FALSE))
             {
                 //DEBUG USE
                 //_debugDisplay.WriteText("Starting Roost write process\n", true);
                 //All we're going to do at this point is set up the basics. Linking our other sets
                 //to this one is something that will come after we know what sets we have.
-                ActionSet roostSet = new ActionSet("Roost", false);
+                ActionSet roostSet = new ActionSet("Roost", _FALSE);
                 roostSet.displayName = _customID;
                 roostSet.colorOn = red;
                 roostSet.colorOff = green;
@@ -1751,7 +1754,7 @@ namespace IngameScript
             //We'll put links to our AP ActionSets in Roost's ActionSetsLinkedToOn and ActionSetsLinkedToOff
             //keys, preserving any existing config. The only thing that'll stop us from doing that 
             //is if the user told us they don't want a roost set.
-            if (!(excludedDeclarations?.Contains("Roost") ?? false))
+            if (!(excludedDeclarations?.Contains("Roost") ?? _FALSE))
             {
                 string existingLinks;
                 List<string> splitLinks;
@@ -1793,16 +1796,16 @@ namespace IngameScript
                     {
                         string programName = actionTemplate.name;
                         desiredState = actionTemplate.getStateWhenRoost(isOn);
-                        if (!(hashedLinks?.Contains(programName) ?? false) && !isEmptyString(desiredState))
+                        if (!(hashedLinks?.Contains(programName) ?? _FALSE) && !isEmptyString(desiredState))
                         { splitLinks.Add($"{programName}: {desiredState}"); }
                     }
                     //Send the value back to the PB parse.
-                    pbParse.Set(roostHeader, key, listToMultiLine(splitLinks, 3, false));
+                    pbParse.Set(roostHeader, key, listToMultiLine(splitLinks, 3, _FALSE));
                 };
                 //All of the heavy lifting is done in the local function above. All we do now is point
                 //it in two directions.
-                addActionLinksToRoost("ActionSetsLinkedToOn", true);
-                addActionLinksToRoost("ActionSetsLinkedToOff", false);
+                addActionLinksToRoost("ActionSetsLinkedToOn", _TRUE);
+                addActionLinksToRoost("ActionSetsLinkedToOff", _FALSE);
             }
             //DEBUG USE
             //_debugDisplay.WriteText("Roost linking complete\n", true);
@@ -1837,7 +1840,7 @@ namespace IngameScript
                 { elements.Add(tallyTemplate.name); }
                 foreach (APTemplate tallyTemplate in tallyInventoriesInUse)
                 { elements.Add(tallyTemplate.name); }
-                elementListing = listToMultiLine(elements, 3, false);
+                elementListing = listToMultiLine(elements, 3, _FALSE);
                 pbParse.Set(sectionName, "Elements", elementListing);
                 writeCommonSurfaceConfig("Tallies");
             }
@@ -1847,7 +1850,7 @@ namespace IngameScript
                 sectionName = "SW.SetReport";
                 foreach (APTemplate setTemplate in actionSetsInUse)
                 { elements.Add(setTemplate.name); }
-                elementListing = listToMultiLine(elements, 3, false);
+                elementListing = listToMultiLine(elements, 3, _FALSE);
                 pbParse.Set(sectionName, "Elements", elementListing);
                 writeCommonSurfaceConfig("Action Sets");
             }
@@ -1891,10 +1894,10 @@ namespace IngameScript
                     totalBadParseCount++;
                     apLog.addWarning($"Block {b.CustomName} failed to parse due to the following " +
                         $"error on line {parseResult.LineNo}: {parseResult.Error}");
-                    return false;
+                    return _FALSE;
                 }
                 else
-                { return true; }
+                { return _TRUE; }
             };
             //If we don't already have blockConfig for this block, parses its CustomData and generates
             //a new instance of APBlockConfig.
@@ -1911,12 +1914,12 @@ namespace IngameScript
                         //debugBlockConfigsCreated++;
                         //_debugDisplay.WriteText($"  >Created APBlockConfig object for block {b.CustomName}\n", true);
 
-                        return true;
+                        return _TRUE;
                     }
                     else
-                    { return false; }
+                    { return _FALSE; }
                 }
-                return true;
+                return _TRUE;
             };
             foreach (IMyTerminalBlock block in apBlocks)
             {
@@ -2065,7 +2068,7 @@ namespace IngameScript
 
             pbParse.Clear();
             blockParse.Clear();
-            return true;
+            return _TRUE;
         }
 
         /* KEEP: This is the old version of AP's Assignment pass, relying on breaks and an isBadParse
@@ -2297,12 +2300,12 @@ namespace IngameScript
             //We'll include hydrogen engines in this, so the conditional is going to be a little long.
             tally = new TallyGeneric(_meterMaid, "Hydrogen", new GasHandler(), highGood);
             templates.Add(tally.programName, new TallyGenericTemplate(tally.programName, tally, b =>
-                (b is IMyGasTank && (b.Components.Get<MyResourceSinkComponent>()?.AcceptedResources.Contains(HYDROGEN_ID) ?? false)) ||
-                (b is IMyPowerProducer && (b.Components.Get<MyResourceSinkComponent>()?.AcceptedResources.Contains(HYDROGEN_ID) ?? false))));
+                (b is IMyGasTank && (b.Components.Get<MyResourceSinkComponent>()?.AcceptedResources.Contains(HYDROGEN_ID) ?? _FALSE)) ||
+                (b is IMyPowerProducer && (b.Components.Get<MyResourceSinkComponent>()?.AcceptedResources.Contains(HYDROGEN_ID) ?? _FALSE))));
             //Oxygen
             tally = new TallyGeneric(_meterMaid, "Oxygen", new GasHandler(), highGood);
             templates.Add(tally.programName, new TallyGenericTemplate(tally.programName, tally, b => b is IMyGasTank &&
-                (b.Components.Get<MyResourceSinkComponent>()?.AcceptedResources.Contains(OXYGEN_ID) ?? false)));
+                (b.Components.Get<MyResourceSinkComponent>()?.AcceptedResources.Contains(OXYGEN_ID) ?? _FALSE)));
             //Cargo
             //To determine if an inventory can accommodate the cargo tally, we check to see if it can 
             //hold both ice and uranium (Because we've already declared those, and because H2O2 gens
@@ -2421,7 +2424,7 @@ namespace IngameScript
             //Antennas
             //ActionSets require a name and an initial state. But in this case, the initial state 
             //won't do anything. So we'll just pass it false.
-            actionSet = new ActionSet("Antennas", false);
+            actionSet = new ActionSet("Antennas", _FALSE);
             actionSet.displayName = "Antenna\nRange";
             actionSet.textOn = "Broad";
             actionSet.textOff = "Wifi";
@@ -2429,75 +2432,75 @@ namespace IngameScript
             templates.Add(actionSet.programName, new ActionSetTemplate(actionSet.programName, actionSet, b => b is IMyRadioAntenna,
                 $"{_SCRIPT_PREFIX}.{actionSet.programName}", $"{_customID}", $"{_customID} Wifi", writeAntennaSection, "Off", "On"));
             //Beacons
-            actionSet = new ActionSet("Beacons", false);
+            actionSet = new ActionSet("Beacons", _FALSE);
             actionSet.displayName = "Beacon";
             actionSet.textOn = "Online";
             actionSet.textOff = "Offline";
             templates.Add(actionSet.programName, new ActionSetTemplate(actionSet.programName, actionSet, b => b is IMyBeacon,
                 $"{_SCRIPT_PREFIX}.{actionSet.programName}", "EnableOn", "EnableOff", writeDiscreteSection, "Off", "On"));
             //Spotlights
-            actionSet = new ActionSet("Spotlights", false);
+            actionSet = new ActionSet("Spotlights", _FALSE);
             actionSet.textOn = "Online";
             actionSet.textOff = "Offline";
             templates.Add(actionSet.programName, new ActionSetTemplate(actionSet.programName, actionSet, b => b is IMyReflectorLight,
                 $"{_SCRIPT_PREFIX}.{actionSet.programName}", "EnableOn", "EnableOff", writeDiscreteSection, "Off", ""));
             //OreDetectors
-            actionSet = new ActionSet("OreDetectors", false);
+            actionSet = new ActionSet("OreDetectors", _FALSE);
             actionSet.displayName = "Ore\nDetector";
             actionSet.textOn = "Scanning";
             actionSet.textOff = "Idle";
             templates.Add(actionSet.programName, new ActionSetTemplate(actionSet.programName, actionSet, b => b is IMyOreDetector,
                 $"{_SCRIPT_PREFIX}.{actionSet.programName}", "EnableOn", "EnableOff", writeDiscreteSection, "Off", "On"));
             //Batteries
-            actionSet = new ActionSet("Batteries", false);
+            actionSet = new ActionSet("Batteries", _FALSE);
             actionSet.textOn = "On Auto";
             actionSet.textOff = "Recharging";
             actionSet.colorOff = yellow;
             templates.Add(actionSet.programName, new ActionSetTemplate(actionSet.programName, actionSet, b => b is IMyBatteryBlock,
                 $"{_SCRIPT_PREFIX}.{actionSet.programName}", "BatteryAuto", "BatteryRecharge", writeDiscreteSection, "Off", "On"));
             //Reactors
-            actionSet = new ActionSet("Reactors", false);
+            actionSet = new ActionSet("Reactors", _FALSE);
             actionSet.textOn = "Active";
             actionSet.textOff = "Inactive";
             templates.Add(actionSet.programName, new ActionSetTemplate(actionSet.programName, actionSet, b => b is IMyReactor,
                 $"{_SCRIPT_PREFIX}.{actionSet.programName}", "EnableOn", "EnableOff", writeDiscreteSection, "Off", ""));
             //EnginesHydrogen
-            actionSet = new ActionSet("EnginesHydrogen", false);
+            actionSet = new ActionSet("EnginesHydrogen", _FALSE);
             actionSet.displayName = "Engines";
             actionSet.textOn = "Running";
             actionSet.textOff = "Idle";
             //Hydrogen engines don't have a bespoke interface, and they're just difficult all around. 
             //But we want to be able to find them, so we look for power producers that consume hydrogen.
             templates.Add(actionSet.programName, new ActionSetTemplate(actionSet.programName, actionSet, b => b is IMyPowerProducer &&
-                (b.Components.Get<MyResourceSinkComponent>()?.AcceptedResources.Contains(HYDROGEN_ID) ?? false),
+                (b.Components.Get<MyResourceSinkComponent>()?.AcceptedResources.Contains(HYDROGEN_ID) ?? _FALSE),
                 $"{_SCRIPT_PREFIX}.{actionSet.programName}", "EnableOn", "EnableOff", writeDiscreteSection, "Off", ""));
             //h2/02 generators, AKA IceCrackers
-            actionSet = new ActionSet("IceCrackers", false);
+            actionSet = new ActionSet("IceCrackers", _FALSE);
             actionSet.displayName = "Ice Crackers";
             actionSet.textOn = "Running";
             actionSet.textOff = "Idle";
             templates.Add(actionSet.programName, new ActionSetTemplate(actionSet.programName, actionSet, b => b is IMyGasGenerator,
                 $"{_SCRIPT_PREFIX}.{actionSet.programName}", "EnableOn", "EnableOff", writeDiscreteSection, "", ""));
             //TanksHydrogen
-            actionSet = new ActionSet("TanksHydrogen", false);
+            actionSet = new ActionSet("TanksHydrogen", _FALSE);
             actionSet.displayName = "Hydrogen\nTanks";
             actionSet.textOn = "Open";
             actionSet.textOff = "Filling";
             actionSet.colorOff = lightBlue;
             templates.Add(actionSet.programName, new ActionSetTemplate(actionSet.programName, actionSet, b => b is IMyGasTank &&
-                (b.Components.Get<MyResourceSinkComponent>()?.AcceptedResources.Contains(HYDROGEN_ID) ?? false),
+                (b.Components.Get<MyResourceSinkComponent>()?.AcceptedResources.Contains(HYDROGEN_ID) ?? _FALSE),
                 $"{_SCRIPT_PREFIX}.{actionSet.programName}", "TankStockpileOff", "TankStockpileOn", writeDiscreteSection, "Off", "On"));
             //TanksOxygen
-            actionSet = new ActionSet("TanksOxygen", false);
+            actionSet = new ActionSet("TanksOxygen", _FALSE);
             actionSet.displayName = "Oxygen\nTanks";
             actionSet.textOn = "Open";
             actionSet.textOff = "Filling";
             actionSet.colorOff = lightBlue;
             templates.Add(actionSet.programName, new ActionSetTemplate(actionSet.programName, actionSet, b => b is IMyGasTank &&
-                (b.Components.Get<MyResourceSinkComponent>()?.AcceptedResources.Contains(OXYGEN_ID) ?? false),
+                (b.Components.Get<MyResourceSinkComponent>()?.AcceptedResources.Contains(OXYGEN_ID) ?? _FALSE),
                 $"{_SCRIPT_PREFIX}.{actionSet.programName}", "TankStockpileOff", "TankStockpileOn", writeDiscreteSection, "Off", "On"));
             //Gyros
-            actionSet = new ActionSet("Gyroscopes", false);
+            actionSet = new ActionSet("Gyroscopes", _FALSE);
             actionSet.displayName = "Gyros";
             actionSet.textOn = "Active";
             actionSet.textOff = "Inactive";
@@ -2534,7 +2537,7 @@ namespace IngameScript
             //ThrustersAtmo
             //To replace ThrustersElectric and ThrustersHydrogen, we'll switch out the ResourceSink 
             //check for string parsing the SubTypeID.
-            actionSet = new ActionSet("ThrustersAtmospheric", false);
+            actionSet = new ActionSet("ThrustersAtmospheric", _FALSE);
             actionSet.displayName = "Atmospheric\nThrusters";
             actionSet.textOn = "Online";
             actionSet.textOff = "Offline";
@@ -2547,7 +2550,7 @@ namespace IngameScript
             //means that the only way to 'identify' an Ion Thruster is to say, 'thrusters that don't
             //have Atmospheric or Hydrogen in the name.'
             //I expect false positives.
-            actionSet = new ActionSet("ThrustersIon", false);
+            actionSet = new ActionSet("ThrustersIon", _FALSE);
             actionSet.displayName = "Ion\nThrusters";
             actionSet.textOn = "Online";
             actionSet.textOff = "Offline";
@@ -2556,7 +2559,7 @@ namespace IngameScript
                 $"{_SCRIPT_PREFIX}.{actionSet.programName}", "EnableOn", "EnableOff", writeDiscreteSection, "Off", "On"));
 
             //ThrustersHydro
-            actionSet = new ActionSet("ThrustersHydrogen", false);
+            actionSet = new ActionSet("ThrustersHydrogen", _FALSE);
             actionSet.displayName = "Hydrogen\nThrusters";
             actionSet.textOn = "Online";
             actionSet.textOff = "Offline";
@@ -2565,7 +2568,7 @@ namespace IngameScript
                 "EnableOn", "EnableOff", writeDiscreteSection, "Off", "On"));
 
             //ThrustersGeneric
-            actionSet = new ActionSet("ThrustersGeneric", false);
+            actionSet = new ActionSet("ThrustersGeneric", _FALSE);
             actionSet.displayName = "Thrusters";
             actionSet.textOn = "Online";
             actionSet.textOff = "Offline";
@@ -2763,7 +2766,7 @@ namespace IngameScript
                 template = null;
             }
 
-            private void createNewConfigEntry(string key, string initialValue, bool isModified = false)
+            private void createNewConfigEntry(string key, string initialValue, bool isModified = _FALSE)
             { config.Add(key, new APConfigEntry(initialValue, isModified)); }
 
             //Creates an entry in the config dictionary from an entry in a MyIni parse, if the parse
@@ -2774,9 +2777,9 @@ namespace IngameScript
                 if (ini.ContainsKey(section, key))
                 {
                     createNewConfigEntry(key, ini.Get(section, key).ToString());
-                    return true;
+                    return _TRUE;
                 }
-                return false;
+                return _FALSE;
             }
 
             public void addLink(string key, string link)
@@ -2785,10 +2788,10 @@ namespace IngameScript
                 { config[key].addLink(link); }
                 else
                 //A new entry will need to be printed, so we'll set it as modified.
-                { createNewConfigEntry(key, link, true); }
+                { createNewConfigEntry(key, link, _TRUE); }
             }
 
-            public void writeConfigToIni(string section, MyIni ini, bool forceWrite = false)
+            public void writeConfigToIni(string section, MyIni ini, bool forceWrite = _FALSE)
             {
                 foreach (KeyValuePair<string, APConfigEntry> pair in config)
                 { pair.Value.writeEntryToIni(ini, section, pair.Key, forceWrite); }
@@ -2803,7 +2806,7 @@ namespace IngameScript
             public string links { get; private set; }
             bool isModified;
 
-            public APConfigEntry(string initialValue, bool startsModified = false)
+            public APConfigEntry(string initialValue, bool startsModified = _FALSE)
             {
                 links = initialValue;
                 isModified = startsModified;
@@ -2815,7 +2818,7 @@ namespace IngameScript
                 if (!links.Contains(newLink))
                 {
                     links = $"{links}, {newLink}";
-                    isModified = true;
+                    isModified = _TRUE;
                 }
             }
 
@@ -2828,7 +2831,7 @@ namespace IngameScript
             }
         }
 
-        public void evaluateFull(LimitedMessageLog textLog, bool firstRun = false)
+        public void evaluateFull(LimitedMessageLog textLog)
         {
             //We'll need a bunch of dictionaries and other lists to move data between the various 
             //sub-evaluates
@@ -3000,7 +3003,7 @@ namespace IngameScript
                     }
                     Action refreshAction = () =>
                     {
-                        tryScheduleMachine(new SpriteRefreshMachine(this, _reports, false));
+                        tryScheduleMachine(new SpriteRefreshMachine(this, _reports, _FALSE));
                         //DEBUG USE
                         //_log.add("Sprite refresh scheduled.");
                     };
@@ -3009,7 +3012,7 @@ namespace IngameScript
                 }
 
                 //Record this occasion for posterity
-                _haveGoodConfig = true;
+                _haveGoodConfig = _TRUE;
                 _lastGoodConfigStamp = DateTime.Now;
                 _nonDeclarationPBConfig = evalNonDeclarationPBConfig;
 
@@ -3340,7 +3343,7 @@ namespace IngameScript
                         //We'll try to get that from the storage string, defaulting to false if we can't
                         //The extra defensiveness here is for situations where we might be dealing with 
                         //non-PB config or a new ActionSet.
-                        bool state = _iniRead?.Get("ActionSets", declarationName).ToBoolean(false) ?? false;
+                        bool state = _iniRead?.Get("ActionSets", declarationName).ToBoolean(_FALSE) ?? _FALSE;
                         ActionSet set = new ActionSet(declarationName, state);
                         //There are a few other bits of configuration that ActionSets may have
                         iniValue = _iniReadWrite.Get(sectionHeader, "DisplayName");
@@ -3387,7 +3390,7 @@ namespace IngameScript
                         //Triggers can be armed or disarmed, and this state persists through loads much
                         //like ActionSets. We'll try to figure out if this trigger is supposed to be
                         //armed or disarmed, arming it if we can't tell.
-                        bool state = _iniRead?.Get("Triggers", declarationName).ToBoolean(true) ?? true;
+                        bool state = _iniRead?.Get("Triggers", declarationName).ToBoolean(_TRUE) ?? _TRUE;
                         Trigger trigger = new Trigger(declarationName, state);
                         //If I decide to allow customization of Trigger elements, that would go here.
 
@@ -3591,9 +3594,9 @@ namespace IngameScript
 
                 //The tally and the set are the most important pieces of information we need, but 
                 //the trigger still needs to know when it should act on those.
-                tryGetCommandFromConfig(trigger, sectionHeader, true, "LessOrEqual",
+                tryGetCommandFromConfig(trigger, sectionHeader, _TRUE, "LessOrEqual",
                     iniValue, textLog);
-                tryGetCommandFromConfig(trigger, sectionHeader, false, "GreaterOrEqual",
+                tryGetCommandFromConfig(trigger, sectionHeader, _FALSE, "GreaterOrEqual",
                     iniValue, textLog);
                 //If we didn't find at least one scenario for this trigger, we can assume that 
                 //something is wrong.
@@ -3777,9 +3780,9 @@ namespace IngameScript
                             //element tells us if we perform the scan when the ActionSet is switched
                             //On, or if we perform the scan when it's switched Off.
                             if (pair.Value)
-                            { raycasterPlan.scanOn = true; }
+                            { raycasterPlan.scanOn = _TRUE; }
                             else
-                            { raycasterPlan.scanOff = true; }
+                            { raycasterPlan.scanOff = _TRUE; }
                             set.addActionPlan(raycasterPlan);
                         }
                         //If we can't match the key from this pair to an existing set, log an error.
@@ -3850,12 +3853,12 @@ namespace IngameScript
                 //objects: the Tallies that store and calculate information and the Reports that 
                 //display it. These are their stories.
                 {
-                    handled = false;
+                    handled = _FALSE;
                     //On most builds, most of what we'll be dealing with are tallies. So let's start there.
                     //_debugDisplay.WriteText("    Tally handler\n", true);
                     if (_iniReadWrite.ContainsKey(_tag, "Tallies"))
                     { //This is grounds for declaring this block to be handled.
-                        handled = true;
+                        handled = _TRUE;
                         //Get the 'Tallies' data
                         iniValue = _iniReadWrite.Get(_tag, "Tallies");
                         //Split the Tallies string into individual tally names
@@ -3934,7 +3937,7 @@ namespace IngameScript
                             {
                                 //If we manage to find one of these keys, the block can be considered
                                 //handled.
-                                handled = true;
+                                handled = _TRUE;
                                 //Get the names of the specified tallies
                                 iniValue = _iniReadWrite.Get(_tag, $"Inv{i}Tallies");
                                 elementNames = iniValue.ToString().Split(',').Select(p => p.Trim()).ToArray();
@@ -3984,7 +3987,7 @@ namespace IngameScript
                         //ActionSets: The ActionSet section names that can be found elsewhere in this 
                         //  block's CustomData.
                         //We found something we understand, declare handled.
-                        handled = true;
+                        handled = _TRUE;
                         //Get the 'ActionSets' data
                         iniValue = _iniReadWrite.Get(_tag, "ActionSets");
                         //Pull the individual ActionSet names from the ActionSets key.
@@ -4108,7 +4111,7 @@ namespace IngameScript
                     {
                         if (_iniReadWrite.ContainsKey(_tag, "Raycasters"))
                         {
-                            handled = true;
+                            handled = _TRUE;
                             iniValue = _iniReadWrite.Get(_tag, "Raycasters");
                             elementNames = iniValue.ToString().Split(',').Select(p => p.Trim()).ToArray();
                             foreach (string name in elementNames)
@@ -4146,7 +4149,7 @@ namespace IngameScript
                                 //Once we've established that there's config for this particular 
                                 //surface, the first part of the process is identical to retrieving
                                 //data from the rest of the common config section.
-                                handled = true;
+                                handled = _TRUE;
                                 iniValue = _iniReadWrite.Get(_tag, configKey);
                                 elementNames = iniValue.ToString().Split(',').Select(p => p.Trim()).ToArray();
                                 //The first difference depends on how many discrete sections we're 
@@ -4264,9 +4267,9 @@ namespace IngameScript
                                                             $"section {sectionHeader} has padding values in excess " +
                                                             $"of 100% for edges {firstEdgeName} and {secondEdgeName} " +
                                                             $"which have been ignored.");
-                                                    return true;
+                                                    return _TRUE;
                                                 }
-                                                return false;
+                                                return _FALSE;
                                             };
                                             if (paddingExceeds100("Left", padLeft, "Right", padRight))
                                             {
@@ -4280,7 +4283,7 @@ namespace IngameScript
                                             }
 
                                             int columns = _iniReadWrite.Get(sectionHeader, "Columns").ToInt32(1);
-                                            bool titleObeysPadding = _iniReadWrite.Get(sectionHeader, "TitleObeysPadding").ToBoolean(false);
+                                            bool titleObeysPadding = _iniReadWrite.Get(sectionHeader, "TitleObeysPadding").ToBoolean(_FALSE);
                                             //Once we have all the data, we can call setAnchors.
                                             report.setAnchors(columns, padLeft, padRight, padTop, padBottom,
                                                 titleObeysPadding, _sb);
@@ -4544,7 +4547,7 @@ namespace IngameScript
                         //If there's no Element key, but the block has been handled, fail silently in 
                         //hope that someone, somewhere, knew what they were doing.
                         //Also, go ahead and set the 'handled' flag.
-                        handled = true;
+                        handled = _TRUE;
                     }
 
                     //If we made it here, but the block hasn't been handled, it's time to complain.
@@ -4603,10 +4606,10 @@ namespace IngameScript
                 if (program.Runtime.CurrentInstructionCount > INSTRUCTION_LIMIT)
                 {
                     updateStats();
-                    return true;
+                    return _TRUE;
                 }
                 else
-                { return false; }
+                { return _FALSE; }
             }
 
             protected void updateStats()
@@ -4700,6 +4703,116 @@ namespace IngameScript
             }
         }
 
+        internal class EvaluationMachine : StateMachineBase
+        {
+            //The LML that will be compiling messages, warnings, and errors
+            LimitedMessageLog textLog;
+            //We'll be using these objects everywhere, may as well declare them once and have done.
+            MyIniParseResult parseResult;
+            MyIniValue iniValue;
+            //The color palette manages default colors, plus any that the user has customized. All
+            //aspects of Evaluate will need access to it. 
+            PaletteManager colorPalette;
+            //We use these dictionaries during evaluation
+            Dictionary<string, Tally> evalTallies;
+            Dictionary<IMyInventory, List<TallyCargo>> evalContainers;
+            Dictionary<string, ActionSet> evalSets;
+            Dictionary<string, Trigger> evalTriggers;
+            Dictionary<string, Raycaster> evalRaycasters;
+            List<IReportable> evalReports;
+            List<WallOText> evalLogReports;
+            Dictionary<string, MFD> evalMFDs;
+            Dictionary<string, Indicator> evalIndicators;
+            //Once the state machine is complete, we'll need a way to get finished data structures
+            //out of this object. For that, we'll use these 'final' variables
+            public Tally[] finalTallies { get; private set; }
+            public Container[] finalContainers { get; private set; }
+            public Dictionary<string, ActionSet> finalSets { get; private set; }
+            public Trigger[] finalTriggers { get; private set; }
+            public Dictionary<string, Raycaster> finalRaycasters { get; private set; }
+            public IReportable[] finalReports { get; private set; }
+            public List<WallOText> finalLogReports { get; private set; }
+            public Dictionary<string, MFD> finalMFDs { get; private set; }
+            public Indicator[] finalIndicators { get; private set; }
+
+            public EvaluationMachine(MyGridProgram program, LimitedMessageLog textLogger, bool createSummary) :
+                base(program, "Evaluator", .5, createSummary)
+            {
+                textLog = textLogger;
+                //MONITOR. Do I need to declare this here? Won't each use just replace this?
+                iniValue = new MyIniValue();
+                //We want our dictionaries to be case agnostic, and this is the comparer to make it happen.
+                StringComparer comparer = StringComparer.OrdinalIgnoreCase;
+                colorPalette = new PaletteManager(comparer);
+                evalTallies = new Dictionary<string, Tally>(comparer);
+                evalSets = new Dictionary<string, ActionSet>(comparer);
+                evalTriggers = new Dictionary<string, Trigger>(comparer);
+                evalRaycasters = new Dictionary<string, Raycaster>(comparer);
+                evalContainers = new Dictionary<IMyInventory, List<TallyCargo>>();
+                evalReports = new List<IReportable>();
+                evalLogReports = new List<WallOText>();
+                evalMFDs = new Dictionary<string, MFD>(comparer);
+                evalIndicators = new Dictionary<string, Indicator>(comparer);
+            }
+            
+            internal override void begin()
+            {
+                sequence = evaluationSequence();
+                status = $"{MACHINE_NAME} started";
+            }
+            
+            IEnumerator<string> evaluationSequence()
+            {
+                yield return status;
+                /*
+                //We want sprite refreshing to be distributed over a minimum of 4 tics. Or roughly
+                //4 tics; depending on the numbers involved, we might end up with fewer here due
+                //to rounding.
+                //If we, somehow, have more than 80 seperate reports, we'll do 20 reports per tic and take
+                //more than 4 tics to get the job done. But at 6 possible tics per second and a hard limit
+                //of one refresh every 10 seconds, you'd have to have 1200 reports before you started 
+                //giving the scheduler grief. And at that point, you've probably hit the instruction 
+                //limit on the Update100 processes long ago.
+                int refreshLimit = Math.Min((int)(Math.Ceiling(reports.Length / MIN_DESIRED_TICS)), MAX_REFRESH_PER_TIC);
+                int index = 0;
+                int targetIndex = refreshLimit;
+                foreach (IReportable report in reports)
+                {
+                    report.refresh();
+                    //The refresh method is part of a previous approach to this problem. All it 
+                    //does is tell the report include or exclude an invisible sprite the next time 
+                    //the report is drawn, forcing the server to re-sync the cache.
+                    //This approach is focused on even distribution of networks load, so we'll call
+                    //update immediately instead of waiting for it to come around on its own.
+                    report.update();
+                    index++;
+                    //On the other state machines, this is the sort of place where we'd check against
+                    //the instruction limit. For this one, we're just interested in distributing the
+                    //network load semi-evenly, and we only check against an arbitrary internal limit.
+                    //MONITOR. The limit is set so low that the instruction limit should never come 
+                    //close to being hit, but it is theoretically possible. A call to isInstructionLimitReached()
+                    //could be included here if needed.
+                    if (index >= targetIndex)
+                    {
+                        targetIndex += refreshLimit;
+                        status = $"{MACHINE_NAME} report {index}/{reports.Length}";
+                        updateStats();
+                        yield return status;
+                    }
+                }
+                */
+            }
+
+            internal override string getSummary()
+            {
+                return getStats();
+                /*
+                return $"{MACHINE_NAME} finished. Re-sync'd sprites on {reports.Length} surfaces.\n" +
+                    $"{getStats()}";
+                */
+            }
+        }
+
         //A state machine for debug use. It exists only to sit in the queue and be in the way of
         //other things happening.
         /*
@@ -4770,6 +4883,7 @@ namespace IngameScript
         }
 
         //20240426: Orphaned, but looks useful
+        /*
         public string getMultilineConfig(List<string> elements, string key, int MAX_PER_LINE, StringBuilder _sb)
         {
             string outcome = "";
@@ -4797,10 +4911,10 @@ namespace IngameScript
                 outcome = _sb.ToString();
                 //Trim the trailing comma and space from our config
                 outcome = outcome.Remove(outcome.Length - 2);
-                /*debug.WriteText($"    Wrote the following multiline config: {outcome}\n", true);*/
+                //debug.WriteText($"    Wrote the following multiline config: {outcome}\n", true);
             }
             return outcome;
-        }
+        } */
 
         public Dictionary<string, Action<IMyTerminalBlock>> compileActions()
         {
@@ -4816,9 +4930,9 @@ namespace IngameScript
 
             //Functional Blocks==================
             //EnableOn
-            actions.Add($"{commandName}On", b => ((IMyFunctionalBlock)b).Enabled = true);
+            actions.Add($"{commandName}On", b => ((IMyFunctionalBlock)b).Enabled = _TRUE);
             //EnableOff
-            actions.Add($"{commandName}Off", b => ((IMyFunctionalBlock)b).Enabled = false);
+            actions.Add($"{commandName}Off", b => ((IMyFunctionalBlock)b).Enabled = _FALSE);
 
             //Battery Blocks=====================
             blockName = "Battery";
@@ -4855,9 +4969,9 @@ namespace IngameScript
             blockName = "Tank";
             commandName = "Stockpile";
             //TankStockpileOn
-            actions.Add($"{blockName}{commandName}On", b => ((IMyGasTank)b).Stockpile = true);
+            actions.Add($"{blockName}{commandName}On", b => ((IMyGasTank)b).Stockpile = _TRUE);
             //TankStockpileOff
-            actions.Add($"{blockName}{commandName}Off", b => ((IMyGasTank)b).Stockpile = false);
+            actions.Add($"{blockName}{commandName}Off", b => ((IMyGasTank)b).Stockpile = _FALSE);
 
             //Gyros==============================
             blockName = "Gyro";
@@ -4867,9 +4981,9 @@ namespace IngameScript
             //GyroOverrideOn
             commandName = "Override";
             //GyroOverrideOn
-            actions.Add($"{blockName}{commandName}On", b => ((IMyGyro)b).GyroOverride = true);
+            actions.Add($"{blockName}{commandName}On", b => ((IMyGyro)b).GyroOverride = _TRUE);
             //GyroOverrideOff
-            actions.Add($"{blockName}{commandName}Off", b => ((IMyGyro)b).GyroOverride = false);
+            actions.Add($"{blockName}{commandName}Off", b => ((IMyGyro)b).GyroOverride = _FALSE);
             //GyroYawPositive
             actions.Add($"{blockName}Yaw{positive}", b => ((IMyGyro)b).Yaw = 9000);
             //GyroYawStabilize
@@ -4897,9 +5011,9 @@ namespace IngameScript
             blockName = "Gear";
             commandName = "AutoLock";
             //GearAutoLockOn
-            actions.Add($"{blockName}{commandName}On", b => ((IMyLandingGear)b).AutoLock = true);
+            actions.Add($"{blockName}{commandName}On", b => ((IMyLandingGear)b).AutoLock = _TRUE);
             //GearAutoLockOff
-            actions.Add($"{blockName}{commandName}Off", b => ((IMyLandingGear)b).AutoLock = false);
+            actions.Add($"{blockName}{commandName}Off", b => ((IMyLandingGear)b).AutoLock = _FALSE);
             //GearLock
             actions.Add($"{blockName}Lock", b => ((IMyLandingGear)b).Lock());
             //GearUnlock
@@ -4909,9 +5023,9 @@ namespace IngameScript
             blockName = "JumpDrive";
             commandName = "Recharge";
             //JumpDriveRechargeOn
-            actions.Add($"{blockName}{commandName}On", b => ((IMyJumpDrive)b).Recharge = true);
+            actions.Add($"{blockName}{commandName}On", b => ((IMyJumpDrive)b).Recharge = _TRUE);
             //JumpDriveRechargeOff
-            actions.Add($"{blockName}{commandName}Off", b => ((IMyJumpDrive)b).Recharge = false);
+            actions.Add($"{blockName}{commandName}Off", b => ((IMyJumpDrive)b).Recharge = _FALSE);
 
             //Parachutes=========================
             blockName = "Parachute";
@@ -4921,9 +5035,9 @@ namespace IngameScript
             actions.Add($"{blockName}Close", b => ((IMyParachute)b).CloseDoor());
             commandName = "AutoDeploy";
             //ParachuteAutoDeployOn
-            actions.Add($"{blockName}{commandName}On", b => ((IMyParachute)b).AutoDeploy = true);
+            actions.Add($"{blockName}{commandName}On", b => ((IMyParachute)b).AutoDeploy = _TRUE);
             //ParachuteAutoDeployOff
-            actions.Add($"{blockName}{commandName}Off", b => ((IMyParachute)b).AutoDeploy = false);
+            actions.Add($"{blockName}{commandName}Off", b => ((IMyParachute)b).AutoDeploy = _FALSE);
 
             //Pistons============================
             blockName = "Piston";
@@ -4949,9 +5063,9 @@ namespace IngameScript
                 Math.Abs(((IMyMotorAdvancedStator)b).TargetVelocityRPM) * -1);*/
             blockName = "Rotor";
             //RotorLock
-            actions.Add($"{blockName}Lock", b => ((IMyMotorStator)b).RotorLock = true);
+            actions.Add($"{blockName}Lock", b => ((IMyMotorStator)b).RotorLock = _TRUE);
             //RotorUnlock
-            actions.Add($"{blockName}Unlock", b => ((IMyMotorStator)b).RotorLock = false);
+            actions.Add($"{blockName}Unlock", b => ((IMyMotorStator)b).RotorLock = _FALSE);
             //RotorReverse
             actions.Add($"{blockName}Reverse", b => ((IMyMotorStator)b).TargetVelocityRPM =
                 ((IMyMotorStator)b).TargetVelocityRPM * -1);
@@ -4966,9 +5080,9 @@ namespace IngameScript
             blockName = "Sorter";
             commandName = "Drain";
             //SorterDrainOn
-            actions.Add($"{blockName}{commandName}On", b => ((IMyConveyorSorter)b).DrainAll = true);
+            actions.Add($"{blockName}{commandName}On", b => ((IMyConveyorSorter)b).DrainAll = _TRUE);
             //SorterDrainOff
-            actions.Add($"{blockName}{commandName}Off", b => ((IMyConveyorSorter)b).DrainAll = false);
+            actions.Add($"{blockName}{commandName}Off", b => ((IMyConveyorSorter)b).DrainAll = _FALSE);
 
             //Sound Block========================
             blockName = "Sound";
@@ -5000,85 +5114,85 @@ namespace IngameScript
             string target = "Target";
             commandName = "Meteors";
             //TurretTargetMeteorsOn
-            actions.Add($"{blockName}{target}{commandName}On", b => ((IMyLargeTurretBase)b).TargetMeteors = true);
+            actions.Add($"{blockName}{target}{commandName}On", b => ((IMyLargeTurretBase)b).TargetMeteors = _TRUE);
             //TurretTargetMeteorsOff
-            actions.Add($"{blockName}{target}{commandName}Off", b => ((IMyLargeTurretBase)b).TargetMeteors = false);
+            actions.Add($"{blockName}{target}{commandName}Off", b => ((IMyLargeTurretBase)b).TargetMeteors = _FALSE);
             //ControllerTargetMeteorsOn
-            actions.Add($"{controller}{target}{commandName}On", b => ((IMyTurretControlBlock)b).TargetMeteors = true);
+            actions.Add($"{controller}{target}{commandName}On", b => ((IMyTurretControlBlock)b).TargetMeteors = _TRUE);
             //ControllerTargetMeteorsOff
-            actions.Add($"{controller}{target}{commandName}Off", b => ((IMyTurretControlBlock)b).TargetMeteors = false);
+            actions.Add($"{controller}{target}{commandName}Off", b => ((IMyTurretControlBlock)b).TargetMeteors = _FALSE);
 
             commandName = "Missiles";
             //TurretTargetMissilesOn
-            actions.Add($"{blockName}{target}{commandName}On", b => ((IMyLargeTurretBase)b).TargetMissiles = true);
+            actions.Add($"{blockName}{target}{commandName}On", b => ((IMyLargeTurretBase)b).TargetMissiles = _TRUE);
             //TurretTargetMissilesOff
-            actions.Add($"{blockName}{target}{commandName}Off", b => ((IMyLargeTurretBase)b).TargetMissiles = false);
+            actions.Add($"{blockName}{target}{commandName}Off", b => ((IMyLargeTurretBase)b).TargetMissiles = _FALSE);
             //ControllerTargetMissilesOn
-            actions.Add($"{controller}{target}{commandName}On", b => ((IMyTurretControlBlock)b).TargetMissiles = true);
+            actions.Add($"{controller}{target}{commandName}On", b => ((IMyTurretControlBlock)b).TargetMissiles = _TRUE);
             //ControllerTargetMissilesOff
-            actions.Add($"{controller}{target}{commandName}Off", b => ((IMyTurretControlBlock)b).TargetMissiles = false);
+            actions.Add($"{controller}{target}{commandName}Off", b => ((IMyTurretControlBlock)b).TargetMissiles = _FALSE);
 
             commandName = "SmallGrids";
             //TurretTargetSmallGridsOn
-            actions.Add($"{blockName}{target}{commandName}On", b => ((IMyLargeTurretBase)b).TargetSmallGrids = true);
+            actions.Add($"{blockName}{target}{commandName}On", b => ((IMyLargeTurretBase)b).TargetSmallGrids = _TRUE);
             //TurretTargetSmallGridsOff
-            actions.Add($"{blockName}{target}{commandName}Off", b => ((IMyLargeTurretBase)b).TargetSmallGrids = false);
+            actions.Add($"{blockName}{target}{commandName}Off", b => ((IMyLargeTurretBase)b).TargetSmallGrids = _FALSE);
             //ControllerTargetSmallGridsOn
-            actions.Add($"{controller}{target}{commandName}On", b => ((IMyTurretControlBlock)b).TargetSmallGrids = true);
+            actions.Add($"{controller}{target}{commandName}On", b => ((IMyTurretControlBlock)b).TargetSmallGrids = _TRUE);
             //ControllerTargetSmallGridsOff
-            actions.Add($"{controller}{target}{commandName}Off", b => ((IMyTurretControlBlock)b).TargetSmallGrids = false);
+            actions.Add($"{controller}{target}{commandName}Off", b => ((IMyTurretControlBlock)b).TargetSmallGrids = _FALSE);
 
             commandName = "LargeGrids";
             //TurretTargetLargeGridsOn
-            actions.Add($"{blockName}{target}{commandName}On", b => ((IMyLargeTurretBase)b).TargetLargeGrids = true);
+            actions.Add($"{blockName}{target}{commandName}On", b => ((IMyLargeTurretBase)b).TargetLargeGrids = _TRUE);
             //TurretTargetLargeGridsOff
-            actions.Add($"{blockName}{target}{commandName}Off", b => ((IMyLargeTurretBase)b).TargetLargeGrids = false);
+            actions.Add($"{blockName}{target}{commandName}Off", b => ((IMyLargeTurretBase)b).TargetLargeGrids = _FALSE);
             //ControllerTargetLargeGridsOn
-            actions.Add($"{controller}{target}{commandName}On", b => ((IMyTurretControlBlock)b).TargetLargeGrids = true);
+            actions.Add($"{controller}{target}{commandName}On", b => ((IMyTurretControlBlock)b).TargetLargeGrids = _TRUE);
             //ControllerTargetLargeGridsOff
-            actions.Add($"{controller}{target}{commandName}Off", b => ((IMyTurretControlBlock)b).TargetLargeGrids = false);
+            actions.Add($"{controller}{target}{commandName}Off", b => ((IMyTurretControlBlock)b).TargetLargeGrids = _FALSE);
 
             commandName = "Characters";
             //TurretTargetCharactersOn
-            actions.Add($"{blockName}{target}{commandName}On", b => ((IMyLargeTurretBase)b).TargetCharacters = true);
+            actions.Add($"{blockName}{target}{commandName}On", b => ((IMyLargeTurretBase)b).TargetCharacters = _TRUE);
             //TurretTargetCharactersOff
-            actions.Add($"{blockName}{target}{commandName}Off", b => ((IMyLargeTurretBase)b).TargetCharacters = false);
+            actions.Add($"{blockName}{target}{commandName}Off", b => ((IMyLargeTurretBase)b).TargetCharacters = _FALSE);
             //ControllerTargetCharactersOn
-            actions.Add($"{controller}{target}{commandName}On", b => ((IMyTurretControlBlock)b).TargetCharacters = true);
+            actions.Add($"{controller}{target}{commandName}On", b => ((IMyTurretControlBlock)b).TargetCharacters = _TRUE);
             //ControllerTargetCharactersOff
-            actions.Add($"{controller}{target}{commandName}Off", b => ((IMyTurretControlBlock)b).TargetCharacters = false);
+            actions.Add($"{controller}{target}{commandName}Off", b => ((IMyTurretControlBlock)b).TargetCharacters = _FALSE);
 
             commandName = "Stations";
             //TurretTargetStationsOn
-            actions.Add($"{blockName}{target}{commandName}On", b => ((IMyLargeTurretBase)b).TargetStations = true);
+            actions.Add($"{blockName}{target}{commandName}On", b => ((IMyLargeTurretBase)b).TargetStations = _TRUE);
             //TurretTargetStationsOff
-            actions.Add($"{blockName}{target}{commandName}Off", b => ((IMyLargeTurretBase)b).TargetStations = false);
+            actions.Add($"{blockName}{target}{commandName}Off", b => ((IMyLargeTurretBase)b).TargetStations = _FALSE);
             //ControllerTargetStationsOn
-            actions.Add($"{controller}{target}{commandName}On", b => ((IMyTurretControlBlock)b).TargetStations = true);
+            actions.Add($"{controller}{target}{commandName}On", b => ((IMyTurretControlBlock)b).TargetStations = _TRUE);
             //ControllerTargetStationsOff
-            actions.Add($"{controller}{target}{commandName}Off", b => ((IMyTurretControlBlock)b).TargetStations = false);
+            actions.Add($"{controller}{target}{commandName}Off", b => ((IMyTurretControlBlock)b).TargetStations = _FALSE);
 
             commandName = "Neutrals";
             //TurretTargetNeutralsOn
-            actions.Add($"{blockName}{target}{commandName}On", b => ((IMyLargeTurretBase)b).TargetNeutrals = true);
+            actions.Add($"{blockName}{target}{commandName}On", b => ((IMyLargeTurretBase)b).TargetNeutrals = _TRUE);
             //TurretTargetNeutralsOff
-            actions.Add($"{blockName}{target}{commandName}Off", b => ((IMyLargeTurretBase)b).TargetNeutrals = false);
+            actions.Add($"{blockName}{target}{commandName}Off", b => ((IMyLargeTurretBase)b).TargetNeutrals = _FALSE);
             //ControllerTargetNeutralsOn
-            actions.Add($"{controller}{target}{commandName}On", b => ((IMyTurretControlBlock)b).TargetNeutrals = true);
+            actions.Add($"{controller}{target}{commandName}On", b => ((IMyTurretControlBlock)b).TargetNeutrals = _TRUE);
             //ControllerTargetNeutralsOff
-            actions.Add($"{controller}{target}{commandName}Off", b => ((IMyTurretControlBlock)b).TargetNeutrals = false);
+            actions.Add($"{controller}{target}{commandName}Off", b => ((IMyTurretControlBlock)b).TargetNeutrals = _FALSE);
 
             commandName = "Enemies";
             //TurretTargetEnemiesOn
-            actions.Add($"{blockName}{target}{commandName}On", b => ((IMyLargeTurretBase)b).TargetEnemies = true);
+            actions.Add($"{blockName}{target}{commandName}On", b => ((IMyLargeTurretBase)b).TargetEnemies = _TRUE);
             //TurretTargetEnemiesOff
-            actions.Add($"{blockName}{target}{commandName}Off", b => ((IMyLargeTurretBase)b).TargetEnemies = false);
+            actions.Add($"{blockName}{target}{commandName}Off", b => ((IMyLargeTurretBase)b).TargetEnemies = _FALSE);
             //For some reason, Turret Controller blocks don't have a setter for TargetEnemies. So 
             //instead, we have to use terminal actions.
             //TurretTargetEnemiesOn
-            actions.Add($"{controller}{target}{commandName}On", b => b.SetValue("TargetEnemies", true));
+            actions.Add($"{controller}{target}{commandName}On", b => b.SetValue("TargetEnemies", _TRUE));
             //TurretTargetEnemiesOff
-            actions.Add($"{controller}{target}{commandName}Off", b => b.SetValue("TargetEnemies", false));
+            actions.Add($"{controller}{target}{commandName}Off", b => b.SetValue("TargetEnemies", _FALSE));
             /* This never worked, and despite some fairly rigorous testing (Where this worked in isolation),
              * I couldn't figure out why. It's something in the lambda expression, possibly the interpolated
              * string. (20250519)
@@ -5117,16 +5231,16 @@ namespace IngameScript
             blockName = "Vent";
             commandName = "pressurize";
             //VentPressurize
-            actions.Add($"{blockName}{commandName}", b => ((IMyAirVent)b).Depressurize = false);
+            actions.Add($"{blockName}{commandName}", b => ((IMyAirVent)b).Depressurize = _FALSE);
             //VentDepressurize
-            actions.Add($"{blockName}De{commandName}", b => ((IMyAirVent)b).Depressurize = true);
+            actions.Add($"{blockName}De{commandName}", b => ((IMyAirVent)b).Depressurize = _TRUE);
 
             //Warheads===========================
             blockName = "Warhead";
             //WarheadArm
-            actions.Add($"{blockName}Arm", b => ((IMyWarhead)b).IsArmed = true);
+            actions.Add($"{blockName}Arm", b => ((IMyWarhead)b).IsArmed = _TRUE);
             //WarheadDisarm
-            actions.Add($"{blockName}Disarm", b => ((IMyWarhead)b).IsArmed = false);
+            actions.Add($"{blockName}Disarm", b => ((IMyWarhead)b).IsArmed = _FALSE);
             commandName = "Countdown";
             //WarheadCountdownStart
             actions.Add($"{blockName}{commandName}Start", b => ((IMyWarhead)b).StartCountdown());
@@ -5221,7 +5335,7 @@ namespace IngameScript
                     //We have something. Is it something we already recognize?
                     if (colorPalette.TryGetValue(rawValue, out coder))
                     //We're done here.
-                    { return true; }
+                    { return _TRUE; }
                     else
                     //We don't recognize this, which means it isn't one of the hard-coded colors. 
                     //But it may be something the user is defining as a custom color.
@@ -5230,25 +5344,25 @@ namespace IngameScript
                         if (elements.Length == 3)
                         {
                             int[] values = new int[3];
-                            bool haveFailed = false;
+                            bool haveFailed = _FALSE;
                             for (int i = 0; i <= 2; i++)
                             {
                                 if (!Int32.TryParse(elements[i], out values[i]))
                                 {
-                                    haveFailed = true;
+                                    haveFailed = _TRUE;
                                     troubleLogger($", key {targetKey}, element {i} could not be parsed" +
                                         " as an integer.");
                                 }
                             }
                             if (haveFailed)
                             //Trouble is already logged. Just head home.
-                            { return false; }
+                            { return _FALSE; }
                             else
                             {
                                 //Create the new color coder and add it to the dictionary.
                                 coder = new ColorCoderMono(new Color(values[0], values[1], values[2]));
                                 colorPalette.Add(rawValue, coder);
-                                return true;
+                                return _TRUE;
                             }
                         }
                         else
@@ -5256,13 +5370,13 @@ namespace IngameScript
                         {
                             troubleLogger($", key {targetKey} does not match a pre-defined color and " +
                                 $"does not have three elements like a custom color.");
-                            return false;
+                            return _FALSE;
                         }
                     }
                 }
                 //If we didn't find something at the designated key, fail silently
                 else
-                { return false; }
+                { return _FALSE; }
             }
 
             //If we're trying to get a hard-coded entry in the dictionary, we can use this, which
@@ -5287,15 +5401,15 @@ namespace IngameScript
                 { _iniReadWrite.SetComment(targetSection, targetKey, "-----------------------------------------"); }
                 //We won't commmit the change to the PB's CustomData just yet. Instead, we'll set a
                 //flag that'll let us know we need to do that back in evaluateInit
-                configAltered = true;
+                configAltered = _TRUE;
                 if (logKeyGeneration)
                 {
                     textLog.addNote($"'{targetKey}' key was missing from '{targetSection}' section of " +
                         $"block '{blockName}' and has been re-generated.");
                 }
-                return false;
+                return _FALSE;
             }
-            return true;
+            return _TRUE;
         }
 
         private bool isElementNameInUse(HashSet<string> elementNames, string name,
@@ -5308,7 +5422,7 @@ namespace IngameScript
                 textLog.addError($"{declarationSection} tried to use the Element name '{name}', " +
                     "which is reserved by the script to indicate portions of a Report that should " +
                     "be left empty. Please choose a different name.");
-                return true;
+                return _TRUE;
             }
             //The second and more obvious scenario is if the name is already in use.
             else if (elementNames.Contains(name))
@@ -5316,11 +5430,11 @@ namespace IngameScript
                 textLog.addError($"{declarationSection} tried to use the Element name '{name}', " +
                     $"which has already been claimed. All Element providers (Tally, ActionSet, " +
                     $"Trigger, Raycaster) must have their own, unique names.");
-                return true;
+                return _TRUE;
             }
             //Barring those two cases, we're fine, and the element name is not in use.
             else
-            { return false; }
+            { return _FALSE; }
         }
 
         /* Parses a State List in the format 'Batteries: On, Thrusters: On' etc
@@ -5335,7 +5449,7 @@ namespace IngameScript
             List<KeyValuePair<string, bool>> parsedData)
         {
             string target = "";
-            bool state = false;
+            bool state = _FALSE;
             bool badState;
             parsedData.Clear();
             string[] pairs = stateList.Split(',').Select(p => p.Trim()).ToArray();
@@ -5343,24 +5457,24 @@ namespace IngameScript
             foreach (string pair in pairs)
             {
 
-                badState = false;
+                badState = _FALSE;
                 string[] parts = pair.Split(':').Select(p => p.Trim()).ToArray();
                 //The first part of the pair is the identifier.
                 target = parts[0];
                 if (parts.Length < 2)
                 {
-                    badState = true;
+                    badState = _TRUE;
                     troubleLogger($"{troubleID} does not provide a state for the component " +
                         $"'{target}'. Valid states are 'on' and 'off'.");
                 }
                 //The second part is the desired state, but it's in the form of on/off
                 else if (parts[1].ToLowerInvariant() == "on")
-                { state = true; }
+                { state = _TRUE; }
                 else if (parts[1].ToLowerInvariant() == "off")
-                { state = false; }
+                { state = _FALSE; }
                 else
                 {
-                    badState = true;
+                    badState = _TRUE;
                     troubleLogger($"{troubleID} attempts to set '{target}' to the invalid state " +
                         $"'{parts[1]}'. Valid states are 'on' and 'off'.");
                 }
@@ -5445,7 +5559,7 @@ namespace IngameScript
                 {
                     //The process for each type is basically the same
                     ActionPart<bool> typedPart = new ActionPart<bool>(propertyName);
-                    bool typedValue = false;
+                    bool typedValue = _FALSE;
                     //Check for an valueOn
                     iniValue = iniReader.Get(sectionHeader, $"Action{index}ValueOn");
                     if (!iniValue.IsEmpty && iniValue.TryGetBoolean(out typedValue))
@@ -5568,9 +5682,9 @@ namespace IngameScript
                     string commandString = iniValue.ToString().ToLowerInvariant();
                     //Match the commandString to a boolean that Trigger will understand
                     if (commandString == "on")
-                    { trigger.setScenario(isLess, value, true); }
+                    { trigger.setScenario(isLess, value, _TRUE); }
                     else if (commandString == "off")
-                    { trigger.setScenario(isLess, value, false); }
+                    { trigger.setScenario(isLess, value, _FALSE); }
                     else if (commandString == "switch")
                     {
                         textLog.addError($"{declarationSection}: {trigger.programName} specifies " +
@@ -5669,11 +5783,11 @@ namespace IngameScript
             internal bool tryAddPeriodic(string name, PeriodicEvent periodic)
             {
                 if (periodics.ContainsKey(name))
-                { return false; }
+                { return _FALSE; }
                 else
                 {
                     periodics.Add(name, periodic);
-                    return true;
+                    return _TRUE;
                 }
             }
 
@@ -5709,12 +5823,12 @@ namespace IngameScript
                     Cooldown newCooldown = new Cooldown(duration, name);
                     cooldowns.Add(name, newCooldown);
                     result = "";
-                    return true;
+                    return _TRUE;
                 }
                 else
                 {
                     result = existing.getTimeRemainingMessage();
-                    return false;
+                    return _FALSE;
                 }
             }
 
@@ -5804,9 +5918,9 @@ namespace IngameScript
             {
                 position--;
                 if (position <= 0)
-                { return true; }
+                { return _TRUE; }
                 else
-                { return false; }
+                { return _FALSE; }
             }
 
             internal string getTimeRemainingMessage()
@@ -5980,7 +6094,7 @@ namespace IngameScript
             return entry;
         }
 
-        public static string listToMultiLine(List<string> elements, int elementsPerLine = 3, bool isRawText = true)
+        public static string listToMultiLine(List<string> elements, int elementsPerLine = 3, bool isRawText = _TRUE)
         {
             int elementsThisLine = 0;
             string outcome = "";
@@ -6082,9 +6196,9 @@ namespace IngameScript
                     default:
                         //The user can't get at this function, so we shouldn't ever have bad input
                         //But just in case...
-                        return false;
+                        return _FALSE;
                 }
-                return true;
+                return _TRUE;
             }
 
             public string getConfigPart()
@@ -6281,8 +6395,8 @@ namespace IngameScript
                 this.multiplier = multiplier;
                 curr = 0;
                 max = 0;
-                maxForced = false;
-                doNotReconstitute = false;
+                maxForced = _FALSE;
+                doNotReconstitute = _FALSE;
                 percent = 0;
                 readableCurr = "curr";
                 readableMax = "max";
@@ -6330,7 +6444,7 @@ namespace IngameScript
                 //For better compatability with AutoPopulte, we'll apply the multiplier as we set
                 //the max.
                 max = val * multiplier;
-                maxForced = true;
+                maxForced = _TRUE;
             }
 
             //compute compiles and analyzes data from this tally's subject blocks, then builds the 
@@ -6374,12 +6488,12 @@ namespace IngameScript
         {
             //TallyGenerics now store their information in a bespoke object that also has methods
             //for dealing with that block type.
-            internal ITallyGenericHandler handler;
+            internal TallyGenericHandlerBase handler;
 
             //TallyGeneric is quite similar to the regular Tally externally, only requiring a 
             //handler to be passed in alongside the name. We need to do a bit of work internally,
             //however.
-            public TallyGeneric(MeterMaid meterMaid, string name, ITallyGenericHandler handler,
+            public TallyGeneric(MeterMaid meterMaid, string name, TallyGenericHandlerBase handler,
                 IColorCoder colorCoder, double multiplier = 1) : base(meterMaid, name, colorCoder, multiplier)
             {
                 this.handler = handler;
@@ -6389,7 +6503,7 @@ namespace IngameScript
             { return handler.tryAddBlock(block); }
 
             internal string getTypeAsString()
-            { return handler.writeConfig(); }
+            { return handler.configName; }
 
             internal override void finishSetup()
             {
@@ -6431,7 +6545,7 @@ namespace IngameScript
             {
                 //name type max? displayName multiplier lowgood
                 //TallyGenerics have very little specific config, and getting it is straightforward.
-                string config = $"Type = {handler.writeConfig()}\n";
+                string config = $"Type = {handler.configName}\n";
                 //We expect generics to use ColorCoderHigh. If it doesn't, we need to make a note.
                 if (!(colorCoder is ColorCoderHigh))
                 { config += $"ColorCoder = {colorCoder.getConfigPart()}\n"; }
@@ -6809,20 +6923,20 @@ namespace IngameScript
             public ActionPart(string propertyID)
             {
                 this.propertyID = propertyID;
-                hasOn = false;
-                hasOff = false;
+                hasOn = _FALSE;
+                hasOff = _FALSE;
             }
 
             public void setValueOn(T value)
             {
                 valueOn = value;
-                hasOn = true;
+                hasOn = _TRUE;
             }
 
             public void setValueOff(T value)
             {
                 valueOff = value;
-                hasOff = true;
+                hasOff = _TRUE;
             }
 
             public override bool isHealthy()
@@ -6890,8 +7004,8 @@ namespace IngameScript
             public ActionPlanRaycaster(Raycaster subject)
             {
                 subjectRaycaster = subject;
-                scanOn = false;
-                scanOff = false;
+                scanOn = _FALSE;
+                scanOff = _FALSE;
             }
 
             //Run a scan with this raycaster, if that's what it's supposed to do for this state.
@@ -6927,8 +7041,8 @@ namespace IngameScript
         {
             //There's a lot of booleans floating around in this object. So we'll replace some of 
             //them with consts in the hope of making the code more readable.
-            public const bool ON_STATE = true;
-            public const bool OFF_STATE = false;
+            public const bool ON_STATE = _TRUE;
+            public const bool OFF_STATE = _FALSE;
             //The ActionSet this ActionPlan is manipulating
             internal ActionSet subjectSet;
             //The booleans that store what action should be taken when this plan is invoked. A value
@@ -6944,20 +7058,20 @@ namespace IngameScript
                 subjectSet = subject;
                 reactionToOn = OFF_STATE;
                 reactionToOff = OFF_STATE;
-                hasOn = false;
-                hasOff = false;
+                hasOn = _FALSE;
+                hasOff = _FALSE;
             }
 
             public void setReactionToOn(bool action)
             {
                 reactionToOn = action;
-                hasOn = true;
+                hasOn = _TRUE;
             }
 
             public void setReactionToOff(bool action)
             {
                 reactionToOff = action;
-                hasOff = true;
+                hasOff = _TRUE;
             }
 
             //Invokes the configured action.
@@ -7054,22 +7168,22 @@ namespace IngameScript
             public ActionPlanTrigger(Trigger subject)
             {
                 this.subjectTrigger = subject;
-                reactionToOn = false;
-                reactionToOff = false;
-                hasOn = false;
-                hasOff = false;
+                reactionToOn = _FALSE;
+                reactionToOff = _FALSE;
+                hasOn = _FALSE;
+                hasOff = _FALSE;
             }
 
             public void setReactionToOn(bool action)
             {
                 reactionToOn = action;
-                hasOn = true;
+                hasOn = _TRUE;
             }
 
             public void setReactionToOff(bool action)
             {
                 reactionToOff = action;
-                hasOff = true;
+                hasOff = _TRUE;
             }
 
             //Enable or disable the linked trigger, based on the configuration.
@@ -7240,7 +7354,7 @@ namespace IngameScript
                 displayName = name;
                 programName = name;
                 isOn = initialState;
-                hasActed = false;
+                hasActed = _FALSE;
                 //Again, I can't have default values for colors passed in through the constructor,
                 //so I'm just setting them here.
                 colorOn = green;
@@ -7280,7 +7394,7 @@ namespace IngameScript
             {
                 isOn = newState;
                 //We need to set this now, so that the loop protection will know if it's in a loop
-                hasActed = true;
+                hasActed = _TRUE;
                 //Likewise, we need to set the sunny day display information now so that loop 
                 //protection will be able to set the fault colors.
                 evaluateStatus();
@@ -7308,7 +7422,7 @@ namespace IngameScript
             }
 
             public void resetHasActed()
-            { hasActed = false; }
+            { hasActed = _FALSE; }
 
             public void setFault()
             {
@@ -7489,10 +7603,10 @@ namespace IngameScript
                 this.programName = programName;
                 greaterOrEqual = -1;
                 lessOrEqual = -1;
-                commandGreater = false;
-                commandLess = false;
-                hasGreater = false;
-                hasLess = false;
+                commandGreater = _FALSE;
+                commandLess = _FALSE;
+                hasGreater = _FALSE;
+                hasLess = _FALSE;
                 enabled = initialState;
                 textOn = "Armed";
                 textOff = "Disarmed";
@@ -7508,13 +7622,13 @@ namespace IngameScript
                 {
                     lessOrEqual = value;
                     commandLess = command;
-                    hasLess = true;
+                    hasLess = _TRUE;
                 }
                 else
                 {
                     greaterOrEqual = value;
                     commandGreater = command;
-                    hasGreater = true;
+                    hasGreater = _TRUE;
                 }
             }
 
@@ -7532,7 +7646,7 @@ namespace IngameScript
             {
                 //If the trigger is currently enabled...
                 linkedSet = null;
-                desiredState = false;
+                desiredState = _FALSE;
                 if (enabled)
                 {
                     //If our Greater command is configured, our set isn't already in the Greater 
@@ -7541,16 +7655,16 @@ namespace IngameScript
                     {
                         linkedSet = targetSet;
                         desiredState = commandGreater;
-                        return true;
+                        return _TRUE;
                     }
                     else if (hasLess && targetSet.isOn != commandLess && targetTally.percent <= lessOrEqual)
                     {
                         linkedSet = targetSet;
                         desiredState = commandLess;
-                        return true;
+                        return _TRUE;
                     }
                 }
-                return false;
+                return _FALSE;
             }
 
             //Operate the ActionSet that this Trigger is tied to.
@@ -7643,13 +7757,13 @@ namespace IngameScript
                 this.programName = programName;
                 report = $"{DateTime.Now.ToString("HH:mm:ss")}- Raycaster {programName} " +
                           $"reports: No data";
-                hasUpdate = false;
+                hasUpdate = _FALSE;
             }
 
             public void addCamera(IMyCameraBlock camera)
             {
                 scanModule.addCamera(camera);
-                camera.EnableRaycast = true;
+                camera.EnableRaycast = _TRUE;
             }
 
             public double getModuleRequiredCharge()
@@ -7666,7 +7780,7 @@ namespace IngameScript
                 //We've offloaded the report writing to a different method. Tell it to do the thing.
                 writeReport(entityInfo, scanRange, camera);
                 //No matter what happened, set hasUpdate to true.
-                hasUpdate = true;
+                hasUpdate = _TRUE;
             }
 
             private void writeReport(MyDetectedEntityInfo entityInfo, double scanRange, IMyCameraBlock camera)
@@ -7712,7 +7826,7 @@ namespace IngameScript
             }
 
             public void updateClaimed()
-            { hasUpdate = false; }
+            { hasUpdate = _FALSE; }
 
             public string toString()
             { return report; }
@@ -7744,7 +7858,7 @@ namespace IngameScript
             public void addCamera(IMyCameraBlock camera)
             {
                 //A camera won't do us any good if we can't raycast from it.
-                camera.EnableRaycast = true;
+                camera.EnableRaycast = _TRUE;
                 cameras.Add(camera);
             }
 
@@ -7960,21 +8074,21 @@ namespace IngameScript
                     pageNumber = pages.Keys.ToList().IndexOf(name);
 
                     finalizePage();
-                    return true;
+                    return _TRUE;
                 }
                 else
-                { return false; }
+                { return _FALSE; }
             }
 
             private void finalizePage()
             {
                 IReportable newPage = pages[pageName];
-                bool needsRefresh = false;
+                bool needsRefresh = _FALSE;
                 //There is a very specific bug that ocurrs when flipping from a Keen app to one of
                 //Shipware's reports, which can be handled by refreshing the report after it's drawn.
                 //This is where we decide if we need to do that.
                 if (currentPage is GameScript && newPage is Report)
-                { needsRefresh = true; }
+                { needsRefresh = _TRUE; }
                 currentPage = newPage;
                 setProfile();
                 //Attempt to update the surface right now to show the new page.
@@ -8094,7 +8208,7 @@ namespace IngameScript
                 //Status Date: 20201229
                 /*setAnchors(3);*/
                 //We won't include a refresh sprite until we're explicitly told to do so. 
-                includeRefreshSprite = false;
+                includeRefreshSprite = _FALSE;
             }
 
             public void setAnchors(int columns, float padLeft, float padRight, 
@@ -8320,7 +8434,7 @@ namespace IngameScript
             public CustomDataBroker(IMyTerminalBlock block)
             {
                 this.block = block;
-                oneTimeUpdate = true;
+                oneTimeUpdate = _TRUE;
             }
 
             public string getData()
@@ -8330,7 +8444,7 @@ namespace IngameScript
             public bool hasUpdate()
             {
                 bool result = oneTimeUpdate;
-                oneTimeUpdate = false;
+                oneTimeUpdate = _FALSE;
                 return result;
             }
         }
@@ -8357,13 +8471,13 @@ namespace IngameScript
                 //If the DetailInfo of our block matches the oldInfo...
                 if (getData() == oldInfo)
                 //There is no update.
-                { return false; }
+                { return _FALSE; }
                 else
                 {
                     //Store the new info in the oldInfo
                     oldInfo = getData();
                     //Indicate that we have an update.
-                    return true;
+                    return _TRUE;
                 }
             }
         }
@@ -8419,7 +8533,7 @@ namespace IngameScript
 
             public bool hasUpdate()
             //Like CustomDataBroker, StorageBroker will never have an update for us.
-            { return false; }
+            { return _FALSE; }
         }
 
         public class RaycastBroker : IHasData
@@ -8611,6 +8725,7 @@ namespace IngameScript
             }
         }
 
+        /*
         //An interface for bespoke objects that store and manage specific block types for TallyGenerics
         public interface ITallyGenericHandler
         {
@@ -8626,28 +8741,48 @@ namespace IngameScript
             string getHandlerConfig();
             //Return the string that will configure tallies of this type.
             string writeConfig();
+        }*/
+
+        internal abstract class TallyGenericHandlerBase
+        {
+            public string configName { get; protected set; }
+
+            internal abstract bool tryAddBlock(IMyTerminalBlock block);
+
+            //We're way outside my comfort zone with this one.
+            protected bool tryAddBlockGeneric<T>(IMyTerminalBlock block, List<T> subjects) where T : class
+            {
+                T prospect = block as T;
+                if (prospect != null)
+                {
+                    subjects.Add(prospect);
+                    return _TRUE;
+                }
+                return _FALSE;
+            }
+
+            internal abstract double getMax();
+
+            internal abstract double getCurr();
+
+            internal virtual string getHandlerConfig()
+            { return ""; }
         }
 
-        public class BatteryHandler : ITallyGenericHandler
+        internal class BatteryHandler : TallyGenericHandlerBase
         {
             List<IMyBatteryBlock> subjects;
 
-            public BatteryHandler()
-            { subjects = new List<IMyBatteryBlock>(); }
-
-            public bool tryAddBlock(IMyTerminalBlock block)
+            internal BatteryHandler()
             {
-                IMyBatteryBlock prospect = block as IMyBatteryBlock;
-                if (prospect == null)
-                { return false; }
-                else
-                {
-                    subjects.Add(prospect);
-                    return true;
-                }
+                subjects = new List<IMyBatteryBlock>();
+                configName = "Battery";
             }
 
-            public double getMax()
+            internal override bool tryAddBlock(IMyTerminalBlock block)
+            { return tryAddBlockGeneric(block, subjects); }
+            
+            internal override double getMax()
             {
                 double max = 0;
                 foreach (IMyBatteryBlock battery in subjects)
@@ -8655,42 +8790,174 @@ namespace IngameScript
                 return max;
             }
 
-            public double getCurr()
+            internal override double getCurr()
             {
                 double curr = 0;
                 foreach (IMyBatteryBlock battery in subjects)
                 { curr += battery.CurrentStoredPower; }
                 return curr;
             }
+        }
+        
+        //Counterintuitively, the 'MaxOutput' of things like Solar Panels and Wind Turbines is not
+        //fixed. It actually describes the ammount of power that the block is currently receiving
+        //in its current enviroment, ie, how much of a panel's surface area is facing the sun, or
+        //what kind of weather is the turbine in. The variable you'd expect to describe those 
+        //things, CurrentOutput, instead describes how much energy the grid is drawing from this
+        //PowerProvider.
+        //Also: MaxOutput is in megawatts, while most PowerProducers generate power in the kilowatt
+        //range. This handler will generally return a decimal.
+        internal class PowerMaxHandler : TallyGenericHandlerBase
+        {
+            List<IMyPowerProducer> subjects;
 
-            public string getHandlerConfig()
-            { return ""; }
+            internal PowerMaxHandler()
+            {
+                subjects = new List<IMyPowerProducer>();
+                configName = "PowerMax";
+            }
+            
+            internal override bool tryAddBlock(IMyTerminalBlock block)
+            { return tryAddBlockGeneric(block, subjects); }
 
-            public string writeConfig()
-            { return "Battery"; }
+            //Since Digi pointed me at the ResourceSourceComponent, I can now figure out exactly
+            //what the maximum output of a PowerProducer is.
+            internal override double getMax()
+            {
+                double max = 0;
+                foreach (IMyPowerProducer producer in subjects)
+                { max += producer.Components.Get<MyResourceSourceComponent>().DefinedOutput; }
+                return max;
+            }
+
+            internal override double getCurr()
+            {
+                double curr = 0;
+                foreach (IMyPowerProducer producer in subjects)
+                { curr += producer.MaxOutput; }
+                return curr;
+            }
+        }
+
+        internal class PowerCurrentHandler : TallyGenericHandlerBase
+        {
+            List<IMyPowerProducer> subjects;
+
+            internal PowerCurrentHandler()
+            {
+                subjects = new List<IMyPowerProducer>();
+                configName = "PowerCurrent";
+            }
+
+            internal override bool tryAddBlock(IMyTerminalBlock block)
+            { return tryAddBlockGeneric(block, subjects); }
+
+            //For the max of PowerCurrent, we use the same DefinedOutput that we used for PowerMax
+            internal override double getMax()
+            {
+                double max = 0;
+                foreach (IMyPowerProducer producer in subjects)
+                { max += producer.Components.Get<MyResourceSourceComponent>().DefinedOutput; }
+                return max;
+            }
+
+            internal override double getCurr()
+            {
+                double curr = 0;
+                foreach (IMyPowerProducer producer in subjects)
+                { curr += producer.CurrentOutput; }
+                return curr;
+            }
+        }
+
+        internal class JumpDriveHandler : TallyGenericHandlerBase
+        {
+            List<IMyJumpDrive> subjects;
+
+            internal JumpDriveHandler()
+            {
+                subjects = new List<IMyJumpDrive>();
+                configName = "JumpDrive";
+            }
+            
+            internal override bool tryAddBlock(IMyTerminalBlock block)
+            { return tryAddBlockGeneric(block, subjects); }
+
+            internal override double getMax()
+            {
+                double max = 0;
+                foreach (IMyJumpDrive drive in subjects)
+                { max += drive.MaxStoredPower; }
+                return max;
+            }
+
+            internal override double getCurr()
+            {
+                double curr = 0;
+                foreach (IMyJumpDrive drive in subjects)
+                { curr += drive.CurrentStoredPower; }
+                return curr;
+            }
+        }
+
+        //The user will probably only have one raycaster per tally. But who are we to judge?
+        internal class RaycastHandler : TallyGenericHandlerBase
+        {
+            List<IMyCameraBlock> subjects;
+            Raycaster linkedRaycaster;
+
+            internal RaycastHandler()
+            {
+                subjects = new List<IMyCameraBlock>();
+                linkedRaycaster = null;
+                configName = "Raycast";
+            }
+
+            internal void linkRaycaster(Raycaster raycaster)
+            { linkedRaycaster = raycaster; }
+
+            internal override bool tryAddBlock(IMyTerminalBlock block)
+            { return tryAddBlockGeneric(block, subjects); }
+
+            //Raycasters don't have a reasonable max, which is why we require them to have their 
+            //max set in config. So what do we do here? Shrug.
+            internal override double getMax()
+            { return -1; }
+
+            internal override double getCurr()
+            {
+                double curr = 0;
+                foreach (IMyCameraBlock camera in subjects)
+                { curr += camera.AvailableScanRange; }
+                return curr;
+            }
+
+            internal override string getHandlerConfig()
+            { return linkedRaycaster == null ? "" : $"Raycaster = {linkedRaycaster.programName}\n"; }
         }
 
         //Oxygen and Hydrogen tanks use the same iterface, so we can use the same handler for both.
         //This handler also handles Hydrogen Engines, so it's a little bit different from the others.
-        public class GasHandler : ITallyGenericHandler
+        internal class GasHandler : TallyGenericHandlerBase
         {
             List<IMyGasTank> tanks;
             List<IMyTerminalBlock> engines;
 
-            public GasHandler()
+            internal GasHandler()
             {
                 tanks = new List<IMyGasTank>();
                 engines = new List<IMyTerminalBlock>();
+                configName = "Gas";
             }
 
-            public bool tryAddBlock(IMyTerminalBlock block)
+            internal override bool tryAddBlock(IMyTerminalBlock block)
             {
                 //Try to cast our prospect as a Gas Tank
                 IMyGasTank prospectiveTank = block as IMyGasTank;
                 if (prospectiveTank != null)
                 {
                     tanks.Add(prospectiveTank);
-                    return true;
+                    return _TRUE;
                 }
                 else
                 {
@@ -8705,11 +8972,11 @@ namespace IngameScript
                          || prospectiveEngine.BlockDefinition.SubtypeId == "LargePrototechReactor"))
                     {
                         engines.Add(prospectiveEngine);
-                        return true;
+                        return _TRUE;
                     }
                     //If it isn't a GasTank and it isn't a Hydrogen engine, we don't want it.
                     else
-                    { return false; }
+                    { return _FALSE; }
                 }
             }
 
@@ -8726,7 +8993,7 @@ namespace IngameScript
             //string[1] = Current fill
             //string[2] = Max fill
             //string[3] = Empty string?
-            public double getMax()
+            internal override double getMax()
             {
                 double max = 0;
                 string[] parts;
@@ -8747,7 +9014,7 @@ namespace IngameScript
                 return max;
             }
 
-            public double getCurr()
+            internal override double getCurr()
             {
                 double curr = 0;
                 foreach (IMyGasTank tank in tanks)
@@ -8759,266 +9026,23 @@ namespace IngameScript
                 }
                 return curr;
             }
-
-            public string getHandlerConfig()
-            { return ""; }
-
-            public string writeConfig()
-            { return "Gas"; }
         }
 
-        public class JumpDriveHandler : ITallyGenericHandler
-        {
-            List<IMyJumpDrive> subjects;
-
-            public JumpDriveHandler()
-            { subjects = new List<IMyJumpDrive>(); }
-
-            public bool tryAddBlock(IMyTerminalBlock block)
-            {
-                IMyJumpDrive prospect = block as IMyJumpDrive;
-                if (prospect == null)
-                { return false; }
-                else
-                {
-                    subjects.Add(prospect);
-                    return true;
-                }
-            }
-
-            public double getMax()
-            {
-                double max = 0;
-                foreach (IMyJumpDrive drive in subjects)
-                { max += drive.MaxStoredPower; }
-                return max;
-            }
-
-            public double getCurr()
-            {
-                double curr = 0;
-                foreach (IMyJumpDrive drive in subjects)
-                { curr += drive.CurrentStoredPower; }
-                return curr;
-            }
-
-            public string getHandlerConfig()
-            { return ""; }
-
-            public string writeConfig()
-            { return "JumpDrive"; }
-        }
-
-        //The user will probably only have one raycaster per tally. But who are we to judge?
-        public class RaycastHandler : ITallyGenericHandler
-        {
-            List<IMyCameraBlock> subjects;
-            Raycaster linkedRaycaster;
-
-            public RaycastHandler()
-            {
-                subjects = new List<IMyCameraBlock>();
-                linkedRaycaster = null;
-            }
-
-            public void linkRaycaster(Raycaster raycaster)
-            { linkedRaycaster = raycaster; }
-
-            public bool tryAddBlock(IMyTerminalBlock block)
-            {
-                IMyCameraBlock prospect = block as IMyCameraBlock;
-                if (prospect == null)
-                { return false; }
-                else
-                {
-                    subjects.Add(prospect);
-                    return true;
-                }
-            }
-
-            //Raycasters don't have a reasonable max, which is why we require them to have their 
-            //max set in config. So what do we do here? Shrug.
-            public double getMax()
-            { return -1; }
-
-            public double getCurr()
-            {
-                double curr = 0;
-                foreach (IMyCameraBlock camera in subjects)
-                { curr += camera.AvailableScanRange; }
-                return curr;
-            }
-
-            public string getHandlerConfig()
-            { return linkedRaycaster == null ? "" : $"Raycaster = {linkedRaycaster.programName}\n"; }
-
-            public string writeConfig()
-            { return "Raycast"; }
-        }
-
-        //Counterintuitively, the 'MaxOutput' of things like Solar Panels and Wind Turbines is not
-        //fixed. It actually describes the ammount of power that the block is currently receiving
-        //in its current enviroment, ie, how much of a panel's surface area is facing the sun, or
-        //what kind of weather is the turbine in. The variable you'd expect to describe those 
-        //things, CurrentOutput, instead describes how much energy the grid is drawing from this
-        //PowerProvider.
-        //Also: MaxOutput is in megawatts, while most PowerProducers generate power in the kilowatt
-        //range. This handler will generally return a decimal.
-        public class PowerMaxHandler : ITallyGenericHandler
-        {
-            List<IMyPowerProducer> subjects;
-
-            public PowerMaxHandler()
-            { subjects = new List<IMyPowerProducer>(); }
-
-            public bool tryAddBlock(IMyTerminalBlock block)
-            {
-                IMyPowerProducer prospect = block as IMyPowerProducer;
-                if (prospect == null)
-                { return false; }
-                else
-                {
-                    subjects.Add(prospect);
-                    return true;
-                }
-            }
-
-            //Since Digi pointed me at the ResourceSourceComponent, I can now figure out exactly
-            //what the maximum output of a PowerProducer is.
-            public double getMax()
-            {
-                double max = 0;
-                foreach (IMyPowerProducer producer in subjects)
-                { max += producer.Components.Get<MyResourceSourceComponent>().DefinedOutput; }
-                return max;
-            }
-
-            public double getCurr()
-            {
-                double curr = 0;
-                foreach (IMyPowerProducer producer in subjects)
-                { curr += producer.MaxOutput; }
-                return curr;
-            }
-
-            public string getHandlerConfig()
-            { return ""; }
-
-            public string writeConfig()
-            { return "PowerMax"; }
-        }
-
-        public class PowerCurrentHandler : ITallyGenericHandler
-        {
-            List<IMyPowerProducer> subjects;
-
-            public PowerCurrentHandler()
-            { subjects = new List<IMyPowerProducer>(); }
-
-            public bool tryAddBlock(IMyTerminalBlock block)
-            {
-                IMyPowerProducer prospect = block as IMyPowerProducer;
-                if (prospect == null)
-                { return false; }
-                else
-                {
-                    subjects.Add(prospect);
-                    return true;
-                }
-            }
-
-            //For the max of PowerCurrent, we use the same DefinedOutput that we used for PowerMax
-            public double getMax()
-            {
-                double max = 0;
-                foreach (IMyPowerProducer producer in subjects)
-                { max += producer.Components.Get<MyResourceSourceComponent>().DefinedOutput; }
-                return max;
-            }
-
-            public double getCurr()
-            {
-                double curr = 0;
-                foreach (IMyPowerProducer producer in subjects)
-                { curr += producer.CurrentOutput; }
-                return curr;
-            }
-
-            public string getHandlerConfig()
-            { return ""; }
-
-            public string writeConfig()
-            { return "PowerCurrent"; }
-        }
-
-        public class IntegrityHandler : ITallyGenericHandler
-        {
-            List<IMySlimBlock> subjects;
-
-            public IntegrityHandler()
-            { subjects = new List<IMySlimBlock>(); }
-
-            public bool tryAddBlock(IMyTerminalBlock block)
-            {
-                //For the rest of the handlers, as we cast the block to the handler's type, we perform
-                //a check to see if that's actually a thing we can do. But in this case, we can't do a
-                //simple cast, and besides, every TerminalBlock should have a Slimblock that can 
-                //provide an integrity reading. So we just return 'true'.
-                //(Plus, if something goes wrong in this process, all the evaluator knows to say
-                //is 'type mismatch', and that's very unlikely to be what went wrong here.)
-                //Get the grid this block is in, then find the slimblock that happens to be at the
-                //same location as our terminal block
-                IMySlimBlock prospect = block.CubeGrid.GetCubeBlock(block.Min);
-                subjects.Add(prospect);
-                return true;
-            }
-
-            public double getMax()
-            {
-                double max = 0;
-                foreach (IMySlimBlock block in subjects)
-                { max += block.MaxIntegrity; }
-                return max;
-            }
-
-            public double getCurr()
-            {
-                double curr = 0;
-                //The maximum health of a block is based on how complete it is. To get the current
-                //health, we subtract the damage the block has taken from its completeness.
-                foreach (IMySlimBlock block in subjects)
-                { curr += block.BuildIntegrity - block.CurrentDamage; }
-                return curr;
-            }
-
-            public string getHandlerConfig()
-            { return ""; }
-
-            public string writeConfig()
-            { return "Integrity"; }
-        }
-
-        public class VentPressureHandler : ITallyGenericHandler
+        internal class VentPressureHandler : TallyGenericHandlerBase
         {
             List<IMyAirVent> subjects;
 
-            public VentPressureHandler()
-            { subjects = new List<IMyAirVent>(); }
-
-            public bool tryAddBlock(IMyTerminalBlock block)
+            internal VentPressureHandler()
             {
-                IMyAirVent prospect = block as IMyAirVent;
-                if (prospect == null)
-                { return false; }
-                else
-                {
-                    subjects.Add(prospect);
-                    return true;
-                }
+                subjects = new List<IMyAirVent>();
+                configName = "VentPressure";
             }
 
+            internal override bool tryAddBlock(IMyTerminalBlock block)
+            { return tryAddBlockGeneric(block, subjects); }
+
             //Vents report pressurization as decimal, with 1 corresponding to 100%. 
-            public double getMax()
+            internal override double getMax()
             {
                 double max = 0;
                 foreach (IMyAirVent vent in subjects)
@@ -9026,41 +9050,29 @@ namespace IngameScript
                 return max;
             }
 
-            public double getCurr()
+            internal override double getCurr()
             {
                 double curr = 0;
                 foreach (IMyAirVent vent in subjects)
                 { curr += vent.GetOxygenLevel(); }
                 return curr;
             }
-
-            public string getHandlerConfig()
-            { return ""; }
-
-            public string writeConfig()
-            { return "VentPressure"; }
         }
 
-        public class PistonExtensionHandler : ITallyGenericHandler
+        internal class PistonExtensionHandler : TallyGenericHandlerBase
         {
             List<IMyPistonBase> subjects;
 
-            public PistonExtensionHandler()
-            { subjects = new List<IMyPistonBase>(); }
-
-            public bool tryAddBlock(IMyTerminalBlock block)
+            internal PistonExtensionHandler()
             {
-                IMyPistonBase prospect = block as IMyPistonBase;
-                if (prospect == null)
-                { return false; }
-                else
-                {
-                    subjects.Add(prospect);
-                    return true;
-                }
+                subjects = new List<IMyPistonBase>();
+                configName = "PistonExtension";
             }
 
-            public double getMax()
+            internal override bool tryAddBlock(IMyTerminalBlock block)
+            { return tryAddBlockGeneric(block, subjects); }
+
+            internal override double getMax()
             {
                 double max = 0;
                 foreach (IMyPistonBase piston in subjects)
@@ -9068,42 +9080,30 @@ namespace IngameScript
                 return max;
             }
 
-            public double getCurr()
+            internal override double getCurr()
             {
                 double curr = 0;
                 foreach (IMyPistonBase piston in subjects)
                 { curr += piston.CurrentPosition; }
                 return curr;
             }
-
-            public string getHandlerConfig()
-            { return ""; }
-
-            public string writeConfig()
-            { return "PistonExtension"; }
         }
 
-        public class RotorAngleHandler : ITallyGenericHandler
+        internal class RotorAngleHandler : TallyGenericHandlerBase
         {
             List<IMyMotorStator> subjects;
 
-            public RotorAngleHandler()
-            { subjects = new List<IMyMotorStator>(); }
-
-            public bool tryAddBlock(IMyTerminalBlock block)
+            internal RotorAngleHandler()
             {
-                IMyMotorStator prospect = block as IMyMotorStator;
-                if (prospect == null)
-                { return false; }
-                else
-                {
-                    subjects.Add(prospect);
-                    return true;
-                }
+                subjects = new List<IMyMotorStator>();
+                configName = "RotorAngle";
             }
 
+            internal override bool tryAddBlock(IMyTerminalBlock block)
+            { return tryAddBlockGeneric(block, subjects); }
+
             //Rotors move in a circle. Their maximum is 360.
-            public double getMax()
+            internal override double getMax()
             {
                 double max = 0;
                 foreach (IMyMotorStator rotor in subjects)
@@ -9111,7 +9111,7 @@ namespace IngameScript
                 return max;
             }
 
-            public double getCurr()
+            internal override double getCurr()
             {
                 double curr = 0;
                 foreach (IMyMotorStator rotor in subjects)
@@ -9121,39 +9121,27 @@ namespace IngameScript
                 { curr += MathHelper.ToDegrees(rotor.Angle); }
                 return curr;
             }
-
-            public string getHandlerConfig()
-            { return ""; }
-
-            public string writeConfig()
-            { return "RotorAngle"; }
         }
 
-        public class ControllerSpeedHandler : ITallyGenericHandler
+        internal class ControllerSpeedHandler : TallyGenericHandlerBase
         {
             List<IMyShipController> subjects;
 
-            public ControllerSpeedHandler()
-            { subjects = new List<IMyShipController>(); }
-
-            public bool tryAddBlock(IMyTerminalBlock block)
+            internal ControllerSpeedHandler()
             {
-                IMyShipController prospect = block as IMyShipController;
-                if (prospect == null)
-                { return false; }
-                else
-                {
-                    subjects.Add(prospect);
-                    return true;
-                }
+                subjects = new List<IMyShipController>();
+                configName = "ControllerSpeed";
             }
+
+            internal override bool tryAddBlock(IMyTerminalBlock block)
+            { return tryAddBlockGeneric(block, subjects); }
 
             //We'll use 110 (The default speed limit) as the max. If the user is using a speed mod, 
             //they can adjust the maximum themselves.
-            public double getMax()
+            internal override double getMax()
             { return 110; }
 
-            public double getCurr()
+            internal override double getCurr()
             {
                 double curr = -1;
                 foreach (IMyShipController controller in subjects)
@@ -9169,39 +9157,27 @@ namespace IngameScript
                 }
                 return curr;
             }
-
-            public string getHandlerConfig()
-            { return ""; }
-
-            public string writeConfig()
-            { return "ControllerSpeed"; }
         }
 
-        public class ControllerGravityHandler : ITallyGenericHandler
+        internal class ControllerGravityHandler : TallyGenericHandlerBase
         {
             List<IMyShipController> subjects;
 
-            public ControllerGravityHandler()
-            { subjects = new List<IMyShipController>(); }
-
-            public bool tryAddBlock(IMyTerminalBlock block)
+            internal ControllerGravityHandler()
             {
-                IMyShipController prospect = block as IMyShipController;
-                if (prospect == null)
-                { return false; }
-                else
-                {
-                    subjects.Add(prospect);
-                    return true;
-                }
+                subjects = new List<IMyShipController>();
+                configName = "ControllerGravity";
             }
+
+            internal override bool tryAddBlock(IMyTerminalBlock block)
+            { return tryAddBlockGeneric(block, subjects); }
 
             //We'll use 1 as the maximum for planetary gravity, even though Pertam weighs in at 1.2.
             //And don't even get me started on Omicron.
-            public double getMax()
+            internal override double getMax()
             { return 1; }
 
-            public double getCurr()
+            internal override double getCurr()
             {
                 double curr = 0;
                 foreach (IMyShipController controller in subjects)
@@ -9216,38 +9192,26 @@ namespace IngameScript
                 }
                 return curr;
             }
-
-            public string getHandlerConfig()
-            { return ""; }
-
-            public string writeConfig()
-            { return "ControllerGravity"; }
         }
 
-        public class ControllerWeightHandler : ITallyGenericHandler
+        internal class ControllerWeightHandler : TallyGenericHandlerBase
         {
-            List<IMyShipController> subjects;
+            List<IMyShipController> subjects; 
 
-            public ControllerWeightHandler()
-            { subjects = new List<IMyShipController>(); }
-
-            public bool tryAddBlock(IMyTerminalBlock block)
+            internal ControllerWeightHandler()
             {
-                IMyShipController prospect = block as IMyShipController;
-                if (prospect == null)
-                { return false; }
-                else
-                {
-                    subjects.Add(prospect);
-                    return true;
-                }
+                subjects = new List<IMyShipController>();
+                configName = "ControllerWeight";
             }
 
+            internal override bool tryAddBlock(IMyTerminalBlock block)
+            { return tryAddBlockGeneric(block, subjects); }
+
             //We have no idea what the maximum weight of a grid is, so we require the user to define one
-            public double getMax()
+            internal override double getMax()
             { return -1; }
 
-            public double getCurr()
+            internal override double getCurr()
             {
                 double curr = -1;
                 foreach (IMyShipController controller in subjects)
@@ -9261,12 +9225,50 @@ namespace IngameScript
                 }
                 return curr;
             }
+        }
 
-            public string getHandlerConfig()
-            { return ""; }
+        internal class IntegrityHandler : TallyGenericHandlerBase
+        {
+            List<IMySlimBlock> subjects;
 
-            public string writeConfig()
-            { return "ControllerWeight"; }
+            internal IntegrityHandler()
+            {
+                subjects = new List<IMySlimBlock>();
+                configName = "Integrity";
+            }
+
+            internal override bool tryAddBlock(IMyTerminalBlock block)
+            {
+                //For the rest of the handlers, as we cast the block to the handler's type, we perform
+                //a check to see if that's actually a thing we can do. But in this case, we can't do a
+                //simple cast, and besides, every TerminalBlock should have a Slimblock that can 
+                //provide an integrity reading. So we just return 'true'.
+                //(Plus, if something goes wrong in this process, all the evaluator knows to say
+                //is 'type mismatch', and that's very unlikely to be what went wrong here.)
+                //Get the grid this block is in, then find the slimblock that happens to be at the
+                //same location as our terminal block
+                IMySlimBlock prospect = block.CubeGrid.GetCubeBlock(block.Min);
+                subjects.Add(prospect);
+                return _TRUE;
+            }
+
+            internal override double getMax()
+            {
+                double max = 0;
+                foreach (IMySlimBlock block in subjects)
+                { max += block.MaxIntegrity; }
+                return max;
+            }
+
+            internal override double getCurr()
+            {
+                double curr = 0;
+                //The maximum health of a block is based on how complete it is. To get the current
+                //health, we subtract the damage the block has taken from its completeness.
+                foreach (IMySlimBlock block in subjects)
+                { curr += block.BuildIntegrity - block.CurrentDamage; }
+                return curr;
+            }
         }
 
         //A simple object that stores a configurable number events and formats them into
@@ -9320,7 +9322,7 @@ namespace IngameScript
                 scriptTag = "";
                 machineStatus = "";
                 this.maxEntries = maxEntries;
-                hasUpdate = false;
+                hasUpdate = _FALSE;
                 scriptUpdateDelay = 0;
                 if (showTicWidget)
                 {
@@ -9368,12 +9370,12 @@ namespace IngameScript
                 _sb.Clear();
 
                 //Flag the log as having been recently updated.
-                hasUpdate = true;
+                hasUpdate = _TRUE;
             }
 
             //Sets the 'updated' flag to false. Call after pulling the new log.
             public void updateClaimed()
-            { hasUpdate = false; }
+            { hasUpdate = _FALSE; }
 
             //Get the logged events in a readable format
             public string toString()

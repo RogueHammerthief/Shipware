@@ -40,6 +40,7 @@
   <ItemGroup>
     <None Include="!Config Scraps\Piranha.ini" />
     <None Include="!Config Scraps\Crane.ini" />
+    <None Include="!Config Scraps\Anglerfish.ini" />
     <None Include="!Config Scraps\Stork.ini" />
     <None Include="!Config Scraps\Barracuda 2.ini" />
     <None Include="!Config Scraps\Barracuda.ini" />

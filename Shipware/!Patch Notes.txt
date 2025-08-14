@@ -217,6 +217,8 @@ v 0.8021 (Count 99671)
  -Gas tallies now recognize the Prototech Fusion Reactor.
  
 v 0.803
+ >Writeup in 20250728
+ -Under the hood: Optimized true and false to reduce character count.
  -!TODO! Character squish. Might be able to make some ground in AutoPopulate, might be able to 
          find some more instances of common code in the Tally Handler implementation (Virtual methods
 		 overriden as needed as opposed to all abstract)(May need to dip into Generics for this). Could 
@@ -227,7 +229,9 @@ v 0.803
 		 making a seperate command.
  
 v 0.804
- -!TODO! Multi-tic AutoPopulate (20240304). Investigate Using statements within the sequencers (20250508)
+ -!TODO! Multi-tic AutoPopulate (20240304). Investigate Using statements within the sequencers (20250508).
+         Also investigate external item listings (20250728) and variable instruction cap based on 
+		 String.Contains use (20250605)
 
 v 0.maybe
  -!TODO! Cyclers
