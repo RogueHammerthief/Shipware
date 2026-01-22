@@ -68,6 +68,7 @@
     <None Include="CodeJournal.cs" />
     <None Include="!Minified Version Archive\Shipware v.802.cs" />
     <None Include="!Minified Version Archive\Shipware v.8021.cs" />
+    <None Include="!Minified Version Archive\Shipware v.8022.cs" />
     <Compile Include="MDK\Bootstrapper.cs" />
     <AdditionalFiles Include="MDK\MDK.options.props">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>

@@ -16,6 +16,7 @@ using VRage.Game.ObjectBuilders.Definitions;
 using VRage.Game.GUI.TextPanel; //Adds support for the new LCD panels
 using VRage.Game;
 using VRageMath;
+using VRage.Scripting.MemorySafeTypes; //For the MemorySafeStringBuilder used by TerminalActions.
 
 namespace IngameScript
 {
@@ -135,7 +136,7 @@ namespace IngameScript
         public static Color black = new Color(0, 0, 0);
         //DEBUG USE
         //Don't forget to initialize
-        //IMyTextSurface _debugDisplay;
+        IMyTextSurface _debugDisplay;
 
         public Program()
         {
@@ -189,7 +190,7 @@ namespace IngameScript
             //The dictionary that holds running and scheduled state machines
             _scheduledMachines = new Dictionary<string, StateMachineBase>();
             //DEBUG USE: The text surface we'll be using for debug prints
-            //_debugDisplay = Me.GetSurface(1);
+            _debugDisplay = Me.GetSurface(1);
             /*
             //Try to initialize the ShieldBroker, which manages the actual ShieldAPI object used by
             //ShieldTally objects.
@@ -219,7 +220,7 @@ namespace IngameScript
             }
             else
             {
-                ensureInitHasRequiredKeys(textLog, _TRUE);
+                EvaluationMachine.ensureInitHasRequiredKeys(textLog, _iniReadWrite, Me, _TRUE);
             }
             textLog.addNote("Use the AutoPopulate command to generate basic configuration.");
             textLog.addNote("The Clone command can quickly distribute config across identical blocks.");
@@ -232,7 +233,7 @@ namespace IngameScript
         }
 
         //Assumes that PBConfig has already been loaded into _iniReadWrite
-        public void ensureInitHasRequiredKeys(LimitedMessageLog textLog, bool firstRun = _FALSE)
+        /*public void ensureInitHasRequiredKeys(LimitedMessageLog textLog, bool firstRun = _FALSE)
         {
             string initTag = $"{_SCRIPT_PREFIX}.Init";
             bool hasInitSection = _iniReadWrite.ContainsSection(initTag);
@@ -282,15 +283,6 @@ namespace IngameScript
                 "MyObjectBuilder_ShipGrinder"),
                 ($"StoreBlock, ContractBlock, {_SCRIPT_PREFIX}.FurnitureSubTypes,\n" +
                 $"{_SCRIPT_PREFIX}.IsolatedCockpitSubTypes, {_SCRIPT_PREFIX}.ShelfSubTypes"),
-                /*("StoreBlock, ContractBlock, PassengerBench, PassengerSeatLarge,\n" +
-                "PassengerSeatSmallNew, PassengerSeatSmallOffset, BuggyCockpit,\n" +
-                "OpenCockpitLarge, OpenCockpitSmall, LargeBlockCockpit,\n" +
-                "CockpitOpen, SmallBlockStandingCockpit, RoverCockpit,\n" +
-                "SpeederCockpitCompact, LargeBlockStandingCockpit,\n" +
-                "LargeBlockLockerRoom, LargeBlockLockerRoomCorner, LargeBlockBed,\n" +
-                "LargeCrate, LargeBlockHalfBed, LargeBlockHalfBedOffset,\n" +
-                "LargeBlockInsetBed, LargeBlockInsetBookshelf, LargeBlockLockers,\n" +
-                "LargeBlockInsetKitchen, LargeBlockWeaponRack, SmallBlockWeaponRack"),*/
                 ("ThrustersGeneric")
             };
             bool[] includeDivider = new bool[]
@@ -319,7 +311,7 @@ namespace IngameScript
             //this opportunity to update the actual config on the PB.
             if (configAltered)
             { Me.CustomData = _iniReadWrite.ToString(); }
-        }
+        }*/
 
         public void Save()
         {
@@ -675,7 +667,7 @@ namespace IngameScript
                                 outcome = tryMatchAction(argReader.Argument(1),
                                     argReader.Argument(2), "");
                                 //If something happened that we need to tell the user about...
-                                if (!isEmptyString(outcome))
+                                if (!Hammers.isEmptyString(outcome))
                                 { _log.add(outcome); }
                             }
                             //If the user did not give us the correct number of arguments, complain.
@@ -730,7 +722,7 @@ namespace IngameScript
                             else
                             {
                                 Me.CustomData = $"{_nonDeclarationPBConfig}\n";
-                                if (!isEmptyString(_nonDeclarationPBConfig))
+                                if (!Hammers.isEmptyString(_nonDeclarationPBConfig))
                                 { Me.CustomData += ";=======================================\n\n"; }
                                 Me.CustomData += writeDeclarations(_tallies.ToList(), _sets.Values.ToList(),
                                     _triggers.ToList(), _raycasters.Values.ToList());
@@ -989,7 +981,7 @@ namespace IngameScript
                                 //much heavy lifting anyway, so it should be fine.
                                 //_debugDisplay.WriteText("Handle declarations\n");
                                 MyIniValue iniValue = _iniReadWrite.Get($"{_SCRIPT_PREFIX}.Init", "APExcludedDeclarations");
-                                if (!isEmptyString(iniValue.ToString()))
+                                if (!Hammers.isEmptyString(iniValue.ToString()))
                                 {
                                     string rawExcludedDeclarations = iniValue.ToString();
                                     outcome += $"These declarations are being excluded from consideration " +
@@ -1387,7 +1379,7 @@ namespace IngameScript
             { set.resetHasActed(); }
             //If we don't have an outcome string yet (Because nothing has gone horribly wrong), and
             //our source string isn't empty (Indicating that we should generate an outcome string)
-            if (isEmptyString(outcome) && !isEmptyString(source))
+            if (Hammers.isEmptyString(outcome) && !Hammers.isEmptyString(source))
             {
                 outcome = $"Carried out {source}command '{command}' for ActionSet '{targetSet.programName}'. " +
                     $"The set's state is now '{targetSet.statusText}'.";
@@ -1420,9 +1412,6 @@ namespace IngameScript
         //  Defaults to null.
         public void findBlocks<T>(List<T> blocks, Func<T, bool> collect = null) where T : class
         { GridTerminalSystem.GetBlocksOfType<T>(blocks, collect); }
-
-        public bool isEmptyString(string input)
-        { return String.IsNullOrEmpty(input); }
 
         internal bool tryScheduleMachine(StateMachineBase newMachine)
         {
@@ -1560,7 +1549,7 @@ namespace IngameScript
             //contents of the |APExcludedDeclarations| key.
             MyIniValue iniValue = pbParse.Get($"{_SCRIPT_PREFIX}.Init", "APExcludedDeclarations");
             List<string> excludedDeclarations = null;
-            if (!isEmptyString(iniValue.ToString()))
+            if (!Hammers.isEmptyString(iniValue.ToString()))
             { excludedDeclarations = iniValue.ToString().Split(',').Select(p => p.Trim()).ToList(); }
             //DEBUG USE
             //_debugDisplay.WriteText("Finished compiling Exclusion hash\n", true);
@@ -1762,7 +1751,7 @@ namespace IngameScript
                 Action<string, bool> addActionLinksToRoost = (key, isOn) =>
                 {
                     existingLinks = pbParse.Get(roostHeader, key).ToString();
-                    if (!isEmptyString(existingLinks))
+                    if (!Hammers.isEmptyString(existingLinks))
                     {
                         //We'll be checking for existing config before we add an entry. Because we're not
                         //sure exactly how much existing config there might be, we'll make one pass through
@@ -1796,7 +1785,7 @@ namespace IngameScript
                     {
                         string programName = actionTemplate.name;
                         desiredState = actionTemplate.getStateWhenRoost(isOn);
-                        if (!(hashedLinks?.Contains(programName) ?? _FALSE) && !isEmptyString(desiredState))
+                        if (!(hashedLinks?.Contains(programName) ?? _FALSE) && !Hammers.isEmptyString(desiredState))
                         { splitLinks.Add($"{programName}: {desiredState}"); }
                     }
                     //Send the value back to the PB parse.
@@ -2186,7 +2175,7 @@ namespace IngameScript
             //The code we're using to split the value will add an empty string 
             //to our element list if the value is empty or doesn't exist. We'll
             //check for that before we commit.
-            if (!isEmptyString(iniValue.ToString()))
+            if (!Hammers.isEmptyString(iniValue.ToString()))
             {
                 elements = iniValue.ToString().Split(',').Select(p => p.Trim()).ToArray();
                 foreach (string element in elements)
@@ -2729,12 +2718,12 @@ namespace IngameScript
             //Returns a state list entry for what this set should be doing when Roost is on. If no
             //action is specified, returns an empty string.
             public string writeRoostOnPart()
-            { return String.IsNullOrEmpty(stateWhenRoostOn) ? "" : $"{name}: {stateWhenRoostOn}"; }
+            { return Hammers.isEmptyString(stateWhenRoostOn) ? "" : $"{name}: {stateWhenRoostOn}"; }
 
             //Returns a state list entry for what this set should be doing when Roost is off. If no
             //action is specified, returns an empty string.
             public string writeRoostOffPart()
-            { return String.IsNullOrEmpty(stateWhenRoostOff) ? "" : $"{name}: {stateWhenRoostOff}"; }
+            { return Hammers.isEmptyString(stateWhenRoostOff) ? "" : $"{name}: {stateWhenRoostOff}"; }
 
             public override string getDeclarationType()
             { return "ActionSet"; }
@@ -2897,7 +2886,7 @@ namespace IngameScript
                 {
                     //As long as we've got a good parse of the PB, we'll store the non-declaration 
                     //config on it for use by Reconstitute.
-                    evalNonDeclarationPBConfig = stripDeclarations();
+                    evalNonDeclarationPBConfig = EvaluationMachine.stripDeclarations(_iniReadWrite);
                     //_debugDisplay.WriteText("Decision made to evaluateGrid\n", true);
                     blockCount = evaluateGrid(textLog, colorPalette, evalTallies, evalSets, evalTriggers,
                         evalRaycasters, evalContainers, evalMFDs, evalReports, evalLogReports,
@@ -3093,7 +3082,7 @@ namespace IngameScript
         internal void evaluateInit(PaletteManager colorPalette, LimitedMessageLog textLog, 
             MyIniValue iniValue, out int refreshFrequency)
         {
-            ensureInitHasRequiredKeys(textLog);
+            EvaluationMachine.ensureInitHasRequiredKeys(textLog, _iniReadWrite, Me);
 
             Color color;
             //IColorCoder colorCoder = null;
@@ -3185,6 +3174,30 @@ namespace IngameScript
             string[] splitHeader;
             _iniReadWrite.GetSections(sectionHeaders);
 
+            Func<string, string, bool> isElementNameInUse = (name, declarationSection) =>
+            {
+                //There are two scenarios under which a name is in use. The first is if the user is 
+                //trying to use our single solitary reserved word. I mean, really user?
+                if (name.ToLowerInvariant() == "blank")
+                {
+                    textLog.addError($"{declarationSection} tried to use the Element name '{name}', " +
+                        "which is reserved by the script to indicate portions of a Report that should " +
+                        "be left empty. Please choose a different name.");
+                    return _TRUE;
+                }
+                //The second and more obvious scenario is if the name is already in use.
+                else if (usedElementNames.Contains(name))
+                {
+                    textLog.addError($"{declarationSection} tried to use the Element name '{name}', " +
+                        $"which has already been claimed. All Element providers (Tally, ActionSet, " +
+                        $"Trigger, Raycaster) must have their own, unique names.");
+                    return _TRUE;
+                }
+                //Barring those two cases, we're fine, and the element name is not in use.
+                else
+                { return _FALSE; }
+            };
+
             foreach (string sectionHeader in sectionHeaders)
             {
                 splitHeader = sectionHeader.Split('.').Select(p => p.Trim()).ToArray();
@@ -3213,7 +3226,7 @@ namespace IngameScript
                         //Our next steps are going to be dictated by the TallyType. We should try and 
                         //figure out what that is.
                         tallyType = _iniReadWrite.Get(sectionHeader, "Type").ToString().ToLowerInvariant();
-                        if (isEmptyString(tallyType))
+                        if (Hammers.isEmptyString(tallyType))
                         { textLog.addError($"{declarationType} {declarationName} has a missing or unreadable Type."); }
                         //Now, we create a tally based on the type. For the TallyCargo, that's quite straightforward.
                         else if (tallyType == "inventory")
@@ -3225,13 +3238,13 @@ namespace IngameScript
                             //We'll need a typeID and a subTypeID, and we'll need to complain if we can't
                             //get them
                             typeID = _iniReadWrite.Get(sectionHeader, "ItemTypeID").ToString();
-                            if (isEmptyString(typeID))
+                            if (Hammers.isEmptyString(typeID))
                             { textLog.addError($"{declarationType} {declarationName} has a missing or unreadable ItemTypeID."); }
                             subTypeID = _iniReadWrite.Get(sectionHeader, "ItemSubTypeID").ToString();
-                            if (isEmptyString(subTypeID))
+                            if (Hammers.isEmptyString(subTypeID))
                             { textLog.addError($"{declarationType} {declarationName} has a missing or unreadable ItemSubTypeID."); }
                             //If we have the data we were looking for, we can create a TallyItem
-                            if (!isEmptyString(typeID) && !isEmptyString(subTypeID))
+                            if (!Hammers.isEmptyString(typeID) && !Hammers.isEmptyString(subTypeID))
                             { tally = new TallyItem(_meterMaid, declarationName, typeID, subTypeID, highGood); }
                         }
                         //On to the TallyGenerics. We'll start with Batteries
@@ -3316,7 +3329,7 @@ namespace IngameScript
 
                         //Thats all the possible tally config. Our last step is to make sure the tally's 
                         //name isn't going to cause problems
-                        if (!isElementNameInUse(usedElementNames, tally.programName, sectionHeader, textLog))
+                        if (!isElementNameInUse(tally.programName, sectionHeader))
                         {
                             //If the name checks out, go ahead and add the tally to our tally dictionary.
                             evalTallies.Add(tally.programName, tally);
@@ -3364,7 +3377,7 @@ namespace IngameScript
                         //That's it. We should have all the initial configuration for this ActionSet.
 
                         //This process is functionally identical to what we did for Tallies.
-                        if (!isElementNameInUse(usedElementNames, set.programName, sectionHeader, textLog))
+                        if (!isElementNameInUse(set.programName, sectionHeader))
                         {
                             //We might have changed what the set uses for status text or colors. A call to 
                             //evaluateStatus will set things right.
@@ -3396,7 +3409,7 @@ namespace IngameScript
 
                         //And that's it. Everything else will have to wait for the second pass. Last 
                         //thing to do here is to check the name.
-                        if (!isElementNameInUse(usedElementNames, trigger.programName, sectionHeader, textLog))
+                        if (!isElementNameInUse(trigger.programName, sectionHeader))
                         {
                             evalTriggers.Add(trigger.programName, trigger);
                             usedElementNames.Add(trigger.programName);
@@ -3414,7 +3427,7 @@ namespace IngameScript
                         string[] moduleConfigurationKeys = null;
                         double[] moduleConfigurationValues = null;
                         string raycasterType = _iniReadWrite.Get(sectionHeader, "Type").ToString().ToLowerInvariant();
-                        if (isEmptyString(raycasterType))
+                        if (Hammers.isEmptyString(raycasterType))
                         { textLog.addError($"{declarationType} {declarationName} has a missing or unreadable Type."); }
                         //For Linear Raycasters, we read:
                         //BaseRange: (Default: 1000): The distance of the first scan that will be 
@@ -3457,7 +3470,7 @@ namespace IngameScript
                         { flawedRaycasters.Add(declarationName); }
                         //Even if we ended up with a flawed raycaster, we're going to behave as if 
                         //we didn't. So next up is the name check.
-                        if (!isElementNameInUse(usedElementNames, declarationName, sectionHeader, textLog))
+                        if (!isElementNameInUse(declarationName, sectionHeader))
                         {
                             evalRaycasters.Add(raycaster.programName, raycaster);
                             usedElementNames.Add(declarationName);
@@ -3803,8 +3816,7 @@ namespace IngameScript
             if (textLog.getErrorTotal() == 0 && evalTallies.Count == 0 && evalSets.Count == 0)
             { textLog.addError($"No readable configuration found on the programmable block."); }
         }
-
-
+        
         internal int evaluateGrid(LimitedMessageLog textLog, PaletteManager colorPalette,
             Dictionary<string, Tally> evalTallies, Dictionary<string, ActionSet> evalSets,
             Dictionary<string, Trigger> evalTriggers, Dictionary<string, Raycaster> evalRaycasters,
@@ -4045,8 +4057,7 @@ namespace IngameScript
 
                                         actionPlan = terminalPlan;
                                     }
-                                    else if (_iniReadWrite.ContainsKey(sectionHeader, "ActionsOn")
-                                        || _iniReadWrite.ContainsKey(sectionHeader, "ActionsOff"))
+                                    else if (_iniReadWrite.ContainsKey(sectionHeader, "ActionsOn") || _iniReadWrite.ContainsKey(sectionHeader, "ActionsOff"))
                                     //If the discrete section contains either ActionsOn or ActionsOff 
                                     //keys, we need to use a MultiActionPlanBlock.
                                     //From config for MultiActionPlanBlock, we read:
@@ -4063,8 +4074,7 @@ namespace IngameScript
 
                                         actionPlan = mapb;
                                     }
-                                    else if (_iniReadWrite.ContainsKey(sectionHeader, "ActionOn")
-                                        || _iniReadWrite.ContainsKey(sectionHeader, "ActionOff"))
+                                    else if (_iniReadWrite.ContainsKey(sectionHeader, "ActionOn") || _iniReadWrite.ContainsKey(sectionHeader, "ActionOff"))
                                     //If we've got an ActionOn or ActionOff key, we use ActionPlanBlock.
                                     //APB is functionally identical to MAPB, just with a single action
                                     //instead of a multitude
@@ -4705,14 +4715,31 @@ namespace IngameScript
 
         internal class EvaluationMachine : StateMachineBase
         {
+            //We'll be using these references a lot, but they're outside of this object's scope. One
+            //of the first things we need to do is establish links back to them.
+            IMyProgrammableBlock me;
+            string storage;
+            //A refreence to the wider program. This is a temporary measure to make ActionPlanUpdate 
+            //work, eventually, I intend to replace it with a reference to the modified Distributor.
+            //But it may end up hanging around.
+            Program script;
             //The LML that will be compiling messages, warnings, and errors
             LimitedMessageLog textLog;
+            //A reference to the global _sb
+            StringBuilder sb;
+            //What's the header of our config, anyway?
+            string tag;
+            //The two MyIni objects we'll be be using to read config.
+            //Usually, but not always, we use one as a reference while the other does the work.
+            MyIni iniRead, iniReadWrite;
             //We'll be using these objects everywhere, may as well declare them once and have done.
             MyIniParseResult parseResult;
             MyIniValue iniValue;
             //The color palette manages default colors, plus any that the user has customized. All
             //aspects of Evaluate will need access to it. 
             PaletteManager colorPalette;
+            //A reference to the global object that draws our meters.
+            MeterMaid meterMaid;
             //We use these dictionaries during evaluation
             Dictionary<string, Tally> evalTallies;
             Dictionary<IMyInventory, List<TallyCargo>> evalContainers;
@@ -4723,8 +4750,14 @@ namespace IngameScript
             List<WallOText> evalLogReports;
             Dictionary<string, MFD> evalMFDs;
             Dictionary<string, Indicator> evalIndicators;
+            //Previously a HashSet called usedElementNames was used to make sure there were no 
+            //duplicate Elements. But then it ocurred to me that I could make that a dictionary 
+            //instead, and have it also store the elements that I'd need to retrieve later.
+            Dictionary<string, IHasElement> configuredElements;
             //Once the state machine is complete, we'll need a way to get finished data structures
             //out of this object. For that, we'll use these 'final' variables
+            //TODO: Replace with a Finalize method that uses a reference to the main script body to
+            //set the globals from this object?
             public Tally[] finalTallies { get; private set; }
             public Container[] finalContainers { get; private set; }
             public Dictionary<string, ActionSet> finalSets { get; private set; }
@@ -4734,13 +4767,30 @@ namespace IngameScript
             public List<WallOText> finalLogReports { get; private set; }
             public Dictionary<string, MFD> finalMFDs { get; private set; }
             public Indicator[] finalIndicators { get; private set; }
+            //In addition to the tallies, sets, and what have you, there are a couple of plain 'ole
+            //numbers we'll need access to
+            public int updateDelay { get; private set; }
+            public int refreshFrequency { get; private set; }
+            //A reference to the global debug display, for debug use.
+            IMyTextSurface debugDisplay;
 
-            public EvaluationMachine(MyGridProgram program, LimitedMessageLog textLogger, bool createSummary) :
-                base(program, "Evaluator", .5, createSummary)
+            public EvaluationMachine(MyGridProgram program, LimitedMessageLog textLogRef, StringBuilder sbRef,
+                MeterMaid meterMaidRef, Program scriptRef, string scriptTag, bool createSummary) 
+                : base(program, "Evaluator", .5, createSummary)
             {
-                textLog = textLogger;
+                me = program.Me;
+                storage = program.Storage;
+                textLog = textLogRef;
+                sb = sbRef;
+                tag = scriptTag;
+                iniRead = new MyIni();
+                iniReadWrite = new MyIni();
                 //MONITOR. Do I need to declare this here? Won't each use just replace this?
                 iniValue = new MyIniValue();
+                meterMaid = meterMaidRef;
+                //This will (hopefully) be replaced by a reference to the distributor, once it's 
+                //altered to handle all interactions with updateFrequency.
+                script = scriptRef;
                 //We want our dictionaries to be case agnostic, and this is the comparer to make it happen.
                 StringComparer comparer = StringComparer.OrdinalIgnoreCase;
                 colorPalette = new PaletteManager(comparer);
@@ -4753,6 +4803,8 @@ namespace IngameScript
                 evalLogReports = new List<WallOText>();
                 evalMFDs = new Dictionary<string, MFD>(comparer);
                 evalIndicators = new Dictionary<string, Indicator>(comparer);
+                configuredElements = new Dictionary<string, IHasElement>(comparer);
+                debugDisplay = script._debugDisplay;
             }
             
             internal override void begin()
@@ -4760,56 +4812,2511 @@ namespace IngameScript
                 sequence = evaluationSequence();
                 status = $"{MACHINE_NAME} started";
             }
-            
-            IEnumerator<string> evaluationSequence()
-            {
-                yield return status;
-                /*
-                //We want sprite refreshing to be distributed over a minimum of 4 tics. Or roughly
-                //4 tics; depending on the numbers involved, we might end up with fewer here due
-                //to rounding.
-                //If we, somehow, have more than 80 seperate reports, we'll do 20 reports per tic and take
-                //more than 4 tics to get the job done. But at 6 possible tics per second and a hard limit
-                //of one refresh every 10 seconds, you'd have to have 1200 reports before you started 
-                //giving the scheduler grief. And at that point, you've probably hit the instruction 
-                //limit on the Update100 processes long ago.
-                int refreshLimit = Math.Min((int)(Math.Ceiling(reports.Length / MIN_DESIRED_TICS)), MAX_REFRESH_PER_TIC);
-                int index = 0;
-                int targetIndex = refreshLimit;
-                foreach (IReportable report in reports)
-                {
-                    report.refresh();
-                    //The refresh method is part of a previous approach to this problem. All it 
-                    //does is tell the report include or exclude an invisible sprite the next time 
-                    //the report is drawn, forcing the server to re-sync the cache.
-                    //This approach is focused on even distribution of networks load, so we'll call
-                    //update immediately instead of waiting for it to come around on its own.
-                    report.update();
-                    index++;
-                    //On the other state machines, this is the sort of place where we'd check against
-                    //the instruction limit. For this one, we're just interested in distributing the
-                    //network load semi-evenly, and we only check against an arbitrary internal limit.
-                    //MONITOR. The limit is set so low that the instruction limit should never come 
-                    //close to being hit, but it is theoretically possible. A call to isInstructionLimitReached()
-                    //could be included here if needed.
-                    if (index >= targetIndex)
-                    {
-                        targetIndex += refreshLimit;
-                        status = $"{MACHINE_NAME} report {index}/{reports.Length}";
-                        updateStats();
-                        yield return status;
-                    }
-                }
-                */
-            }
 
             internal override string getSummary()
             {
                 return getStats();
-                /*
+                /*  TODO: Final version
                 return $"{MACHINE_NAME} finished. Re-sync'd sprites on {reports.Length} surfaces.\n" +
                     $"{getStats()}";
                 */
+            }
+
+            internal void checkInstructionLimit()
+            {
+                if (isInstructionLimitReached())
+                { yield return status; }
+            }
+
+            IEnumerator<string> evaluationSequence()
+            {
+                string evalNonDeclarationPBConfig = "";
+                int blockCount = -1;
+                debugDisplay.WriteText("Evaluation sequence started\n");
+                //We'll go ahead and get a parse from the Storage string. 
+                //The storage string can't be directly altered by the user, and it isn't a huge loss if
+                //we can't read it, so we simply assume that it parsed correctly
+                iniRead.TryParse(program.Storage);
+
+                //Now that we have that, we'll go ahead and get whatever update delay we had stored
+                updateDelay = iniRead.Get("Data", "UpdateDelay").ToInt32(0);
+                debugDisplay.WriteText($"Update delay of {updateDelay} retrieved and set\n", true);
+                //We'll get the refreshFrequency during EvaluateInit, but we won't actually use it until
+                //the end of this method.
+                refreshFrequency = -1;
+
+                //Parse the PB's custom data. If it checks out, we can proceed.
+                if (!iniReadWrite.TryParse(me.CustomData, out parseResult))
+                //If we didn't get a useable parse, file a complaint.
+                {
+                    textLog.addError($"The parser encountered an error on line {parseResult.LineNo} of the " +
+                        $"Programmable Block's config: {parseResult.Error}");
+                }
+                else 
+                {
+                    //Worth noting: EvaluateInit does not check against the instruction limit. But 
+                    //that should be fine, there are fairly hard limits on how many instructions it
+                    //could possibly use.
+                    debugDisplay.WriteText("Entering evaluateInit\n", true);
+                    evaluateInit(); 
+
+                    debugDisplay.WriteText("Entering evaluateDeclarations\n", true);
+                    evaluateDeclarations();
+
+                    //_debugDisplay.WriteText("Deciding to evaluateGrid\n", true);
+                    //If we've logged any errors with the PB config, there's no point in looking at the grid.
+                    if (textLog.getErrorTotal() > 0)
+                    {
+                        textLog.addWarning("Errors in Programmable Block configuration have prevented grid " +
+                            "configuration from being evaluated.");
+                    }
+                    else
+                    {
+                        //As long as we've got a good parse of the PB, we'll store the non-declaration 
+                        //config on it for use by Reconstitute.
+                        evalNonDeclarationPBConfig = stripDeclarations(iniReadWrite);
+                        debugDisplay.WriteText("Decision made to evaluateGrid\n", true);
+                        blockCount = evaluateGrid(textLog, colorPalette, evalTallies, evalSets, evalTriggers,
+                            evalRaycasters, evalContainers, evalMFDs, evalReports, evalLogReports,
+                            evalIndicators, parseResult, iniValue);
+                    }
+                }
+
+                //_debugDisplay.WriteText("Config evaluation complete\n", true);
+                //It's time to make some decisions about the config we've read, and to tell the user 
+                //about it. The first decision has to do with the logReports
+                if (_logReports == null || textLog.getErrorTotal() == 0 || evalLogReports.Count >= _logReports.Count)
+                { _logReports = evalLogReports; }
+                //The main decision is, 'How much do we trust all this config we just read'? 
+                string outcome = "Evaluation complete.\n";
+                if (textLog.getErrorTotal() > 0)
+                {
+                    outcome += "Errors prevent the use of this configuration. ";
+                    if (_haveGoodConfig)
+                    {
+                        //There is conceivably a scenario where we changed the updateFrequency coming
+                        //into this. Re-affirm the normal updateFrequency.
+                        Runtime.UpdateFrequency = UpdateFrequency.Update100;
+                        outcome += $"Execution continuing with last good configuration from " +
+                            $"{(DateTime.Now - _lastGoodConfigStamp).Minutes} minutes ago " +
+                            $"({_lastGoodConfigStamp.ToString("HH: mm: ss")}).\n";
+                    }
+                    else
+                    {
+                        //Make sure the script isn't trying to run with errors.
+                        Runtime.UpdateFrequency = UpdateFrequency.None;
+                        outcome += "Because there is no good configuration loaded, the script has been halted.\n";
+                    }
+                    //File a complaint.
+                    outcome += $"\nThe following errors are preventing the use of this config:\n{textLog.errorsToString()}";
+                    //(20230426)Color-codes the word 'error' in this message. Needs the color reader in 
+                    //evaluateInit hooked back up if custom colors are desired.
+                    //outcome += $"\nThe following [color=#{textLog.errorCode}]errors[/color] are preventing the use of this config:\n{textLog.errorsToString()}";
+                }
+                else
+                {
+                    //_debugDisplay.WriteText("Entered error-free wrap-up\n", true);
+                    //_debugDisplay.WriteText($"Warning listing:\n{textLog.warningsToString()}\n", true);
+                    //We've got good config. We'll brag about that in a moment, but first, we need to 
+                    //un-pack a small mountain of eval dictionaries.
+                    Container container;
+                    int counter = 0;
+                    _containers = new Container[evalContainers.Count];
+                    foreach (IMyInventory inventory in evalContainers.Keys)
+                    {
+                        //Build a new Container object based on the data we've collected in evaluation
+                        container = new Container(inventory, evalContainers[inventory].ToArray());
+                        //Send the maximum volume of this inventory to its linked tallies.
+                        container.sendMaxToTallies();
+                        //Place the container in the array.
+                        _containers[counter] = container;
+                        counter++;
+                    }
+                    //_debugDisplay.WriteText("Finished containers\n", true);
+                    //Next, tear down the complicated data structures we've been using for evaluation into
+                    //the arrays we'll be using during execution
+                    _tallies = evalTallies.Values.ToArray();
+                    _triggers = evalTriggers.Values.ToArray();
+                    _reports = evalReports.ToArray();
+                    _indicators = evalIndicators.Values.ToArray();
+                    //_debugDisplay.WriteText("Finished array conversion\n", true);
+                    //In some cases, we'll port the contents of the eval dictionaries directly to the globals
+                    _sets = evalSets;
+                    _raycasters = evalRaycasters;
+                    _MFDs = evalMFDs;
+                    //_debugDisplay.WriteText("Finished dictionary hand-over\n", true);
+                    //There's one more step before the tallies are ready. We need to tell them that they
+                    //have all the data that they're going to get. 
+                    foreach (Tally finishTally in _tallies)
+                    { finishTally.finishSetup(); }
+                    //_debugDisplay.WriteText("Finished finishSetup tally calls\n", true);
+                    //We'll take this opportunity to call setProfile on all our Reportables
+                    foreach (IReportable reportable in _reports)
+                    { reportable.setProfile(); }
+                    //{ reportable.setProfile(); }
+                    //_debugDisplay.WriteText("Finished setProfile calls\n", true);
+
+                    //We need to clear up a few peristant bits that may or may not be coming over from
+                    //the previous script instance. First, any leftover state machines
+                    _activeMachine?.end();
+                    _activeMachine = null;
+                    _scheduledMachines.Clear();
+                    //We won't mess with Update10. At the end of this, we're setting Update100, which
+                    //will do the job for us.
+
+                    //One of the last things we need to do is set up the Distributor.
+                    _distributor.clearPeriodics();
+                    setUpdateDelay(updateDelay);
+                    //A value of -1 indicates the sprite refresher is disabled
+                    if (refreshFrequency > -1)
+                    {
+                        //We don't let the user set the refresh frequency lower than 10.
+                        if (refreshFrequency < 10)
+                        {
+                            textLog.addWarning($"{_SCRIPT_PREFIX}.Init, key 'MPSpriteSyncFrequency' " +
+                                $"requested an invalid frequncy of {refreshFrequency}. Sync frequency has " +
+                                $"been set to the lowest allowed value of 10 instead.");
+                            refreshFrequency = 10;
+                        }
+                        Action refreshAction = () =>
+                        {
+                            tryScheduleMachine(new SpriteRefreshMachine(this, _reports, _FALSE));
+                            //DEBUG USE
+                            //_log.add("Sprite refresh scheduled.");
+                        };
+                        PeriodicEvent refreshEvent = new PeriodicEvent(refreshFrequency, refreshAction);
+                        _distributor.addOrReplacePeriodic("SpriteRefresher", refreshEvent);
+                    }
+
+                    //Record this occasion for posterity
+                    _haveGoodConfig = _TRUE;
+                    _lastGoodConfigStamp = DateTime.Now;
+                    _nonDeclarationPBConfig = evalNonDeclarationPBConfig;
+
+                    //Also, brag
+                    outcome += $"Script is now running. Registered {_tallies.Length} tallies, " +
+                        $"{_sets.Count} ActionSets, {_triggers.Length} triggers, and {_reports.Length} " +
+                        $"reports, as configured by data on {blockCount} blocks. Evaluation used " +
+                        $"{Runtime.CurrentInstructionCount} / {Runtime.MaxInstructionCount} " +
+                        $"({(int)(((double)Runtime.CurrentInstructionCount / Runtime.MaxInstructionCount) * 100)}%) " +
+                        $"of instructions allowed in this tic.\n";
+                    //And now, we set the script into motion.
+                    Runtime.UpdateFrequency = UpdateFrequency.Update100;
+                }
+                if (textLog.getNoteTotal() > 0)
+                { outcome += $"\nThe following messages were logged:\n{textLog.notesToString()}"; }
+                if (textLog.getWarningTotal() > 0)
+                { outcome += $"\nThe following warnings were logged:\n{textLog.warningsToString()}"; }
+                //{ outcome += $"\nThe following [color=#{textLog.warningCode}]warnings[/color] were logged:\n{textLog.warningsToString()}"; }
+
+                //_debugDisplay.WriteText("Evaluation wrap-up complete:\n", true);
+
+                _log.add(outcome);
+                //Force-update our logReports, just in case the script isn't executing.
+                foreach (WallOText logReport in _logReports)
+                { logReport.update(); }
+
+                //This should be called wherever we came from
+                //Echo(_log.toString());
+
+                //There's probably still data in the iniReader. We don't need it anymore, and we don't
+                //want it carrying over to any future evaluations.
+                iniReadWrite.Clear();
+                iniRead.Clear();
+
+                //_debugDisplay.WriteText("Exit evaluation\n", true);
+
+                //DEBUG USE
+                /*
+                List<string> colorNames = colorPalette.Keys.ToList();
+                string palettePrint = $"Palette contains {colorNames.Count} colorCoders:\n";
+                foreach (string name in colorNames) 
+                { palettePrint += $"{name}\n";}
+                textLog.addNote(palettePrint);
+                */
+                /*
+                _debugDisplay.WriteText("colorPalette getConfigPart:\n", true);
+                foreach (IColorCoder coder in colorPalette.Values)
+                { _debugDisplay.WriteText($"  {coder.getConfigPart()}\n", true); }
+                _debugDisplay.WriteText("Tally ColorCoder getConfigPart:\n", true);
+                foreach (Tally tally in evalTallies.Values)
+                { _debugDisplay.WriteText($"  {tally.colorCoder.getConfigPart()}\n", true); }
+                */
+                //DEBUG USE
+                /*
+                List<Tally> debugTallyList = evalTallies.Values.ToList();
+                for (int i = 0; i < debugTallyList.Count; i++)
+                { textLog.addNote(debugTallyList[i].writeConfig(i)); }
+                List<ActionSet> debugSetList = evalSets.Values.ToList();
+                for (int i = 0; i < debugSetList.Count; i++)
+                { textLog.addNote(debugSetList[i].writeConfig(i)); }
+                List<Trigger> debugTriggerList = evalTriggers.Values.ToList();
+                for (int i = 0; i < debugTriggerList.Count; i++)
+                { textLog.addNote(debugTriggerList[i].writeConfig(i)); }
+                List<Raycaster> debugRaycasterList = evalRaycasters.Values.ToList();
+                for (int i = 0; i < debugRaycasterList.Count; i++)
+                { textLog.addNote(debugRaycasterList[i].writeConfig(i)); }
+
+                _log.add($"Test evaluate complete. The following errors were logged:\n" +
+                    $"{textLog.errorsToString()}\n" +
+                    $"The following warnings were logged:\n" +
+                    $"{textLog.warningsToString()}\n" +
+                    $"The following messages were logged:\n" +
+                    $"{textLog.notesToString()}\n");
+                    */
+
+            }
+
+            internal void evaluateInit()
+            {
+                debugDisplay.WriteText("  Ensuring init has required keys\n", true);
+                debugDisplay.WriteText("  NOTE: This method was made static and moved to this machine.\n", true);
+                ensureInitHasRequiredKeys(textLog, iniReadWrite, me);
+                Color color;
+                //IColorCoder colorCoder = null;
+                string initTag = $"{_SCRIPT_PREFIX}.Init";
+                Action<string> troubleLogger = message =>
+                { textLog.addError($"{initTag}{message}"); };
+                //Retrieve direct references to our main color coders so we can modify them
+                debugDisplay.WriteText("  Setting colors\n", true);
+                ColorCoderLow lowGood = (ColorCoderLow)(colorPalette.getCoderDirect("LowGood"));
+                ColorCoderHigh highGood = (ColorCoderHigh)(colorPalette.getCoderDirect("HighGood"));
+                Action<string> setThresholdColor = thresholdName =>
+                {
+                    if (colorPalette.tryGetColorFromConfig(troubleLogger, iniReadWrite, initTag,
+                        $"Color{thresholdName}", out color))
+                    {
+                        lowGood.tryAssignColorByName(thresholdName, color);
+                        highGood.tryAssignColorByName(thresholdName, color);
+                    }
+                };
+                setThresholdColor("Optimal");
+                setThresholdColor("Normal");
+                setThresholdColor("Caution");
+                setThresholdColor("Warning");
+                setThresholdColor("Critical");
+                //<<<The functionallity from these calls has only been partially duplicated in 
+                //ensureInitHasRequiredKeys.
+                /*
+                tryGetPaletteFromConfig(troubleLogger, textLog, colorPalette, color, colorCoder, iniValue,
+                    lowGood, highGood, initTag, "Optimal", "Green", logKeyGeneration, ref configAltered);
+                tryGetPaletteFromConfig(troubleLogger, textLog, colorPalette, color, colorCoder, iniValue,
+                    lowGood, highGood, initTag, "Normal", "LightBlue", logKeyGeneration, ref configAltered);
+                tryGetPaletteFromConfig(troubleLogger, textLog, colorPalette, color, colorCoder, iniValue,
+                    lowGood, highGood, initTag, "Caution", "Yellow", logKeyGeneration, ref configAltered);
+                tryGetPaletteFromConfig(troubleLogger, textLog, colorPalette, color, colorCoder, iniValue,
+                    lowGood, highGood, initTag, "Warning", "Orange", logKeyGeneration, ref configAltered);
+                tryGetPaletteFromConfig(troubleLogger, textLog, colorPalette, color, colorCoder, iniValue,
+                    lowGood, highGood, initTag, "Critical", "Red", logKeyGeneration, ref configAltered);*/
+
+                //(20230426) This is for color-coding text in the PB's DetailInfo.
+                //It also might not be working. When I tested it, the color seemed a lot like a blue even
+                //though we should've been retrieving a red.
+                //textLog.errorColor = color;
+
+                //The other thing we need to read from Init is the refresh frequency. But we'll just hand
+                //that off to the main method
+                refreshFrequency = iniReadWrite.Get(initTag, "MPSpriteSyncFrequency").ToInt32(-1);
+                debugDisplay.WriteText($"  MPSpriteSyncFrequency of {refreshFrequency} retrieved.\n", true);
+            }
+
+            //Assumes that PBConfig has already been loaded into iniRW
+            //Possibly this should go in the Hammers utility class, but... it kinda does fit here.
+            public static void ensureInitHasRequiredKeys(LimitedMessageLog textLog, MyIni iniRW, 
+                IMyProgrammableBlock pb, bool firstRun = _FALSE)
+            {
+                string initTag = $"{_SCRIPT_PREFIX}.Init";
+                bool hasInitSection = iniRW.ContainsSection(initTag);
+                //We only need to log individual key generation if there's already an init section. 
+                bool logKeyGeneration = hasInitSection && !firstRun;
+                bool configAltered = _FALSE;
+                string pbName = pb.CustomName;
+                MyIniValue iniValue;
+                
+                //Checks the specified ini section for the specified key. If the key is found, returns true.
+                //If the key is absent, generate a new key with a defualt value and potentially log that 
+                //this happened.
+                //...Granted, it's a local function, and we don't actually use the true/false that 
+                //it returns. But it's the thought that counts, probably.
+                Func<string, string, string, bool, bool> tryCheckForDefaultIniKey =
+                    (targetSection, targetKey, defaultValue, includeDivider) =>
+                {
+                    iniValue = iniRW.Get(targetSection, targetKey);
+                    if (iniValue.IsEmpty)
+                    {
+                        //We didn't even find one of these required keys. Generate a new one.
+                        iniRW.Set(targetSection, targetKey, defaultValue);
+                        if (includeDivider)
+                        { iniRW.SetComment(targetSection, targetKey, "-----------------------------------------"); }
+                        //We won't commmit the change to the PB's CustomData just yet. Instead, we'll set a
+                        //flag that'll let us know we need to do that back in evaluateInit
+                        configAltered = _TRUE;
+                        if (logKeyGeneration)
+                        {
+                            textLog.addNote($"'{targetKey}' key was missing from '{targetSection}' section of " +
+                                $"block '{pb.CustomName}' and has been re-generated.");
+                        }
+                        return _FALSE;
+                    }
+                    return _TRUE;
+                };
+
+                //If the Init section is missing entirely, we'll make one note for the entire lot.
+                if (!hasInitSection && !firstRun)
+                {
+                    textLog.addNote($"{initTag} section was missing from block '{pbName}' and " +
+                      $"has been re-generated.");
+                }
+
+                //We're basically going to be doing the same thing over and over. Only the Keys and the
+                //Values will change from one run to the next, so we'll put all those in arrays and just 
+                //loop through them
+                string[] requiredKeys = new string[]
+                {
+                //Color palette
+                "ColorOptimal",
+                "ColorNormal",
+                "ColorCaution",
+                "ColorWarning",
+                "ColorCritical",
+                //SpriteRefresh
+                "MPSpriteSyncFrequency",
+                //AutoPopulate
+                "APExcludedBlockTypes",
+                "APExcludedBlockSubTypes",
+                "APExcludedDeclarations"
+                };
+                string[] defaultValues = new string[]
+                {
+                //Color palette
+                "Green",
+                "LightBlue",
+                "Yellow",
+                "Orange",
+                "Red",
+                //Sprite refresh
+                "-1",
+                //AutoPopulate
+                //|----------------------------------------------------------|
+                ("MyObjectBuilder_ConveyorSorter, MyObjectBuilder_ShipWelder,\n" +
+                "MyObjectBuilder_ShipGrinder"),
+                ($"StoreBlock, ContractBlock, {_SCRIPT_PREFIX}.FurnitureSubTypes,\n" +
+                $"{_SCRIPT_PREFIX}.IsolatedCockpitSubTypes, {_SCRIPT_PREFIX}.ShelfSubTypes"),
+                ("ThrustersGeneric")
+                };
+                bool[] shouldIncludeDivider = new bool[]
+                {
+                //Color palette
+                _FALSE,
+                _FALSE,
+                _FALSE,
+                _FALSE,
+                _FALSE,
+                //Sprite refresh
+                _TRUE,
+                //AutoPopulate
+                _TRUE,
+                _TRUE,
+                _TRUE
+                };
+
+                for (int i = 0; i < requiredKeys.Length; i++)
+                {
+                    tryCheckForDefaultIniKey(initTag, requiredKeys[i], defaultValues[i], shouldIncludeDivider[i]);
+                }
+
+                //If the configuration has changed (Because we decided to add KVPs to it), we'll take 
+                //this opportunity to update the actual config on the PB.
+                if (configAltered)
+                { pb.CustomData = iniRW.ToString(); }
+            }
+
+            //assume that _iniRead has been loaded with a parse from the Save string and that _iniReadWrite
+            //has been loaded with a parse from the PB (Or the block we're reading declarations from)
+            internal void evaluateDeclarations()
+            {
+                string declarationType = "";
+                string declarationName = "";
+                Color color = Color.Black;
+                ColorCoderLow lowGood = (ColorCoderLow)(colorPalette.getCoderDirect("LowGood"));
+                ColorCoderHigh highGood = (ColorCoderHigh)(colorPalette.getCoderDirect("HighGood"));
+                IColorCoder colorCoder;
+                List<string> raycasterTallySectionHeaders = new List<string>();
+                List<TallyGeneric> raycasterTallies = new List<TallyGeneric>();
+                //The troubleLogger we'll use to add errors to the textLog
+                //TODO (20240730) Come back and replace references to this old error logger with refrences 
+                //to the new, more capable logger. And alter the things it plugged into to deliver half-messages.
+                debugDisplay.WriteText("  Setting declarationErrorLogger\n", true);
+                debugDisplay.WriteText("  TODO - finish implementing it\n", true);
+                //Action<string> errorLoggerOLD = b => textLog.addError(b);
+                Action<string> declarationErrorLogger = message =>
+                { textLog.addError($"{declarationType} {declarationName}{message}"); };
+                StringComparison compareMode = StringComparison.OrdinalIgnoreCase;
+                //int index = 0;
+                //_debugDisplay.WriteText("Initial Tally parse\n", true);
+                //We make multiple (Two, at the moment) passes through the ActionSet configuration. We
+                //need a list to store loaded ActionSets - in the order we read them - for later access,
+                //as opposed to dumping them into the finished ActionSet pile.
+                //(20240618) Because we no longer have to generate a specific index for 
+                //section headers in the second pass, this is no longer required.
+                //List<ActionSet> loadedActionSets = new List<ActionSet>();
+
+                //We're going to add something of a third pass, specifically to cull triggers and 
+                //raycasters that don't get all the information they need to be functional objects.
+                //The checks to determine if the object is flawed will happen earlier in evaluate, but
+                //we hold on to those objects until after the second ActionSet pass so it doesn't get
+                //confused as to why the objects its looking for are gone.
+                List<string> flawedTriggers = new List<string>();
+                List<string> flawedRaycasters = new List<string>();
+
+                List<string> sectionHeaders = new List<string>();
+                string[] splitHeader;
+                iniReadWrite.GetSections(sectionHeaders);
+
+                debugDisplay.WriteText("  Declaring isElementNameInUse func\n", true);
+                debugDisplay.WriteText("  (This was previously an independent method\n", true);
+                Func<string, string, bool> isElementNameInUse = (name, declarationSection) =>
+                {
+                    //There are two scenarios under which a name is in use. The first is if the user is 
+                    //trying to use our single solitary reserved word. I mean, really user?
+                    if (name.ToLowerInvariant() == "blank")
+                    {
+                        //NOTE: Specifically decided not to transfer these two error messages over to the 
+                        //new errorLogger. Mostly because 'Tally Blank tried to use the element name 'blank''
+                        //makes a pretty lame error message.
+                        textLog.addError($"{declarationSection} tried to use the Element name '{name}', " +
+                            "which is reserved by the script to indicate portions of a Report that should " +
+                            "be left empty. Please choose a different name.");
+                        return _TRUE;
+                    }
+                    //The second and more obvious scenario is if the name is already in use.
+                    else if (configuredElements.ContainsKey(name))
+                    {
+                        textLog.addError($"{declarationSection} tried to use the Element name '{name}', " +
+                            $"which has already been claimed. All Element providers (Tally, ActionSet, " +
+                            $"Trigger, Raycaster) must have their own, unique names.");
+                        return _TRUE;
+                    }
+                    //Barring those two cases, we're fine, and the element name is not in use.
+                    else
+                    { return _FALSE; }
+                };
+
+                foreach (string sectionHeader in sectionHeaders)
+                {
+                    debugDisplay.WriteText($"  First pass on declaration {sectionHeader}\n", true);
+                    splitHeader = sectionHeader.Split('.').Select(p => p.Trim()).ToArray();
+                    //All declarations have four elements. So if we've got four elements and a Shipware
+                    //prefix, we'll assume it's a declaration.
+                    if (splitHeader.Length == 4 && String.Equals(splitHeader[0], _SCRIPT_PREFIX, compareMode))
+                    {
+                        declarationType = splitHeader[2];
+                        declarationName = splitHeader[3];
+
+                        //Tallies are up first. From Tally sections, we read:
+                        //  DisplayName: A name that will be shown on screens instead of the program name
+                        //  Type: The type of this tally. Cargo or Item are common, and there are a number
+                        //    TallyGenerics like Battery, Gas, and PowerCurrent.
+                        //  ItemTypeID: For TallyItems, the ID that will be fed into MyItemType
+                        //  ItemSubyTypeID: For TallyItems, the sub type ID that will be fed into MyItemType
+                        //  Max: A user-definable value that will be used in place of the evaluate-calculated
+                        //    max. Required for some tallies, like TallyItems
+                        //  Multiplyer: The multiplier that will be applied to curr and max of this tally. 
+                        //  ColorCoder: The color coding scheme this tally will use. Can be lowGood, highGood,
+                        //    or any color if the color should not change based on the tally's value.
+                        if (declarationType.Equals("Tally", compareMode))
+                        {
+                            debugDisplay.WriteText($"    Evaluating Tally {declarationName}\n", true);
+                            Tally tally = null;
+                            string tallyType;
+                            //Our next steps are going to be dictated by the TallyType. We should try and 
+                            //figure out what that is.
+                            tallyType = iniReadWrite.Get(sectionHeader, "Type").ToString().ToLowerInvariant();
+                            if (Hammers.isEmptyString(tallyType))
+                            { declarationErrorLogger(" has a missing or unreadable Type."); }
+                            //Now, we create a tally based on the type. For the TallyCargo, that's quite straightforward.
+                            else if (tallyType == "inventory")
+                            { tally = new TallyCargo(meterMaid, declarationName, lowGood); }
+                            //Creating a TallyItem is a bit more involved.
+                            else if (tallyType == "item")
+                            {
+                                string typeID, subTypeID;
+                                //We'll need a typeID and a subTypeID, and we'll need to complain if we can't
+                                //get them
+                                typeID = iniReadWrite.Get(sectionHeader, "ItemTypeID").ToString();
+                                if (Hammers.isEmptyString(typeID))
+                                { declarationErrorLogger(" has a missing or unreadable ItemTypeID."); }
+                                subTypeID = iniReadWrite.Get(sectionHeader, "ItemSubTypeID").ToString();
+                                if (Hammers.isEmptyString(subTypeID))
+                                { declarationErrorLogger(" has a missing or unreadable ItemSubTypeID."); }
+                                //If we have the data we were looking for, we can create a TallyItem
+                                if (!Hammers.isEmptyString(typeID) && !Hammers.isEmptyString(subTypeID))
+                                { tally = new TallyItem(meterMaid, declarationName, typeID, subTypeID, highGood); }
+                            }
+                            //On to the TallyGenerics. We'll start with Batteries
+                            else if (tallyType == "battery")
+                            { tally = new TallyGeneric(meterMaid, declarationName, new BatteryHandler(), highGood); }
+                            //Gas, which works for both Hydrogen and Oxygen
+                            else if (tallyType == "gas")
+                            { tally = new TallyGeneric(meterMaid, declarationName, new GasHandler(), highGood); }
+                            else if (tallyType == "jumpdrive")
+                            { tally = new TallyGeneric(meterMaid, declarationName, new JumpDriveHandler(), highGood); }
+                            else if (tallyType == "raycast")
+                            {
+                                tally = new TallyGeneric(meterMaid, declarationName, new RaycastHandler(), highGood);
+                                //Raycasters can get some of their information from other script objects,
+                                //but those objects haven't been initiated yet. So we'll store the data we'll
+                                //need to make decisions about this later.
+                                raycasterTallySectionHeaders.Add(sectionHeader);
+                                raycasterTallies.Add((TallyGeneric)tally);
+                            }
+                            else if (tallyType == "powermax")
+                            { tally = new TallyGeneric(meterMaid, declarationName, new PowerMaxHandler(), highGood); }
+                            else if (tallyType == "powercurrent")
+                            { tally = new TallyGeneric(meterMaid, declarationName, new PowerCurrentHandler(), highGood); }
+                            else if (tallyType == "integrity")
+                            { tally = new TallyGeneric(meterMaid, declarationName, new IntegrityHandler(), highGood); }
+                            else if (tallyType == "ventpressure")
+                            { tally = new TallyGeneric(meterMaid, declarationName, new VentPressureHandler(), highGood); }
+                            else if (tallyType == "pistonextension")
+                            { tally = new TallyGeneric(meterMaid, declarationName, new PistonExtensionHandler(), highGood); }
+                            else if (tallyType == "rotorangle")
+                            { tally = new TallyGeneric(meterMaid, declarationName, new RotorAngleHandler(), highGood); }
+                            else if (tallyType == "controllergravity")
+                            { tally = new TallyGeneric(meterMaid, declarationName, new ControllerGravityHandler(), highGood); }
+                            else if (tallyType == "controllerspeed")
+                            { tally = new TallyGeneric(meterMaid, declarationName, new ControllerSpeedHandler(), highGood); }
+                            else if (tallyType == "controllerweight")
+                            { tally = new TallyGeneric(meterMaid, declarationName, new ControllerWeightHandler(), highGood); }
+                            //TODO: Aditional TallyTypes go here
+                            else
+                            {
+                                //If we've gotten to this point, the user has given us a type that we can't 
+                                //recognize. Scold them.
+                                declarationErrorLogger($" has un-recognized Type of '{tallyType}'.");
+                            }
+                            //If we've gotten to this point and we haven't put together enough information
+                            //to make a proper tally, make a fake one using whatever data we have on hand.
+                            //This will allow us to continue evaluation.
+                            //(This fires if we can't read the tally type or we don't recognize the tally type)
+                            if (tally == null)
+                            { tally = new TallyCargo(meterMaid, declarationName, lowGood); }
+
+                            //Now that we have our tally, we need to check to see if there's any further
+                            //configuration data. 
+                            //First, the DisplayName
+                            iniValue = iniReadWrite.Get(sectionHeader, "DisplayName");
+                            if (!iniValue.IsEmpty)
+                            { tally.displayName = iniValue.ToString(); }
+                            //Up next is the Multiplier. Note that, because of how forceMax works, the multiplier
+                            //must be applied before the max.
+                            iniValue = iniReadWrite.Get(sectionHeader, "Multiplier");
+                            if (!iniValue.IsEmpty)
+                            { tally.multiplier = iniValue.ToDouble(); }
+                            //Then the Max
+                            iniValue = iniReadWrite.Get(sectionHeader, "Max");
+                            if (!iniValue.IsEmpty)
+                            { tally.forceMax(iniValue.ToDouble()); }
+                            //There's a couple of TallyTypes that need to have a Max explicitly set (All 
+                            //TallyItems, plus the TallyGeneric ControllerWeight (But not PowerProducers, 
+                            //that's fixed. And while Raycasters do need to be told what their max is, 
+                            //there's two places they can get it, and we decide if they did later.)). 
+                            //If that hasn't happened, we need to complain.
+                            else if (iniValue.IsEmpty && (tally is TallyItem || (tally is TallyGeneric
+                                && ((TallyGeneric)tally).handler is ControllerWeightHandler)))
+                            {
+                                declarationErrorLogger($"'s TallyType of '{tallyType}' requires a " +
+                                    "Max to be set in configuration.");
+                            }
+                            //Last step is to check for a custom ColorCoder
+                            if (colorPalette.tryGetCoderFromConfig(declarationErrorLogger, iniReadWrite,
+                                sectionHeader, "ColorCoder", out colorCoder))
+                            { tally.colorCoder = colorCoder; }
+
+                            //Thats all the possible tally config. Our last step is to make sure the tally's 
+                            //name isn't going to cause problems
+                            if (!isElementNameInUse(tally.programName, sectionHeader))
+                            {
+                                //If the name checks out, go ahead and add the tally to our tally dictionary.
+                                evalTallies.Add(tally.programName, tally);
+                                //And add the name to our list of in-use Element names
+                                configuredElements.Add(tally.programName, tally);
+                            }
+                        }
+
+                        //ActionSets are up next. On this pass of ActionSet config, we read:
+                        //  DisplayName: A name that will be shown on screens instead of the set name
+                        //  ColorOn: The color that will be used for the set's element when it is on
+                        //  ColorOff: The color that will be used for the set's element when it is off
+                        //  TextOn: The text that will be diplsayed on the set's element when it is on
+                        //  TextOff: The text that will be diplsayed on the set's element when it is off
+                        //This is actually all the config that an ActionSet object holds. The remaining 
+                        //(multitude) of keys you sometimes see in config set up ActionPlans that manipulate
+                        //other script objects. We read those once we're sure all the possible script object
+                        //have been initialized.
+                        else if (declarationType.Equals("ActionSet", compareMode))
+                        {
+                            debugDisplay.WriteText($"    Evaluating ActionSet {declarationName}\n", true);
+                            //ActionSets have a lot less going on than tallies, initially at least. We 
+                            //need their name, but the only other thing we kinda want to know about them 
+                            //is what their previous state was.
+                            //We'll try to get that from the storage string, defaulting to false if we can't
+                            //The extra defensiveness here is for situations where we might be dealing with 
+                            //non-PB config or a new ActionSet.
+                            bool state = iniRead?.Get("ActionSets", declarationName).ToBoolean(_FALSE) ?? _FALSE;
+                            ActionSet set = new ActionSet(declarationName, state);
+                            //There are a few other bits of configuration that ActionSets may have
+                            iniValue = iniReadWrite.Get(sectionHeader, "DisplayName");
+                            if (!iniValue.IsEmpty)
+                            { set.displayName = iniValue.ToString(); }
+                            if (colorPalette.tryGetColorFromConfig(declarationErrorLogger, iniReadWrite,
+                                sectionHeader, "ColorOn", out color))
+                            { set.colorOn = color; }
+                            if (colorPalette.tryGetColorFromConfig(declarationErrorLogger, iniReadWrite,
+                                sectionHeader, "ColorOff", out color))
+                            { set.colorOff = color; }
+                            iniValue = iniReadWrite.Get(sectionHeader, "TextOn");
+                            if (!iniValue.IsEmpty)
+                            { set.textOn = iniValue.ToString(); }
+                            iniValue = iniReadWrite.Get(sectionHeader, "TextOff");
+                            if (!iniValue.IsEmpty)
+                            { set.textOff = iniValue.ToString(); }
+                            //That's it. We should have all the initial configuration for this ActionSet.
+
+                            //This process is functionally identical to what we did for Tallies.
+                            if (!isElementNameInUse(set.programName, sectionHeader))
+                            {
+                                //We might have changed what the set uses for status text or colors. A call to 
+                                //evaluateStatus will set things right.
+                                set.evaluateStatus();
+                                //This ActionSet should be ready. Pass it to the dictionary.
+                                evalSets.Add(set.programName, set);
+                                //We'll need an ordered list of ActionSets for our second pass. Also add this 
+                                //set to that list.
+                                //(20240618) Because we no longer have to generate a specific index for 
+                                //section headers in the second pass, this is no longer required.
+                                //loadedActionSets.Add(set);
+                                configuredElements.Add(set.programName, set);
+                            }
+                        }
+
+                        //From the initial pass of trigger configuration, we read:
+                        //Basically Nothing: We'll take the name of the object from the header, then check
+                        //the storage string to see if we can find an initial state for it. But because 
+                        //we can't be sure that we've read the tally or the ActionSet that the trigger 
+                        //refers to, we'll need to wait for the second pass to do most of the work.
+                        else if (declarationType.Equals("Trigger", compareMode))
+                        {
+                            debugDisplay.WriteText($"    Evaluating Trigger {declarationName}\n", true);
+                            //Triggers can be armed or disarmed, and this state persists through loads much
+                            //like ActionSets. We'll try to figure out if this trigger is supposed to be
+                            //armed or disarmed, arming it if we can't tell.
+                            bool state = iniRead?.Get("Triggers", declarationName).ToBoolean(_TRUE) ?? _TRUE;
+                            Trigger trigger = new Trigger(declarationName, state);
+                            //If I decide to allow customization of Trigger elements, that would go here.
+
+                            //And that's it. Everything else will have to wait for the second pass. Last 
+                            //thing to do here is to check the name.
+                            if (!isElementNameInUse(trigger.programName, sectionHeader))
+                            {
+                                evalTriggers.Add(trigger.programName, trigger);
+                                configuredElements.Add(trigger.programName, trigger);
+                            }
+                        }
+                        //Raycasters are now considered full script objects, with the powers and responsibilities
+                        //thereof. From Raycaster configuration, we read:
+                        //Name: The Element name of this Raycaster
+                        //Type: What type of Raycaster this is
+                        else if (declarationType.Equals("Raycaster", compareMode))
+                        {
+                            debugDisplay.WriteText($"    Evaluating Raycaster {declarationName}\n", true);
+                            Raycaster raycaster = new Raycaster(sb, declarationName);
+                            RaycasterModuleBase scanModule = null;
+                            string[] moduleConfigurationKeys = null;
+                            double[] moduleConfigurationValues = null;
+                            string raycasterType = iniReadWrite.Get(sectionHeader, "Type").ToString().ToLowerInvariant();
+                            if (Hammers.isEmptyString(raycasterType))
+                            { declarationErrorLogger(" has a missing or unreadable Type."); }
+                            //For Linear Raycasters, we read:
+                            //BaseRange: (Default: 1000): The distance of the first scan that will be 
+                            //  performed by this raycaster
+                            //Multiplier (Default: 3): The multipler that will be applied to each 
+                            //  successive scan's distance 
+                            //MaxRange (Default: 27000): The maximum range to be scanned by this 
+                            //  raycaster. The last scan performed will always be at this distance.
+                            else if (raycasterType == "linear")
+                            {
+                                scanModule = new RaycasterModuleLinear();
+                                moduleConfigurationKeys = RaycasterModuleLinear.getModuleConfigurationKeys();
+                                //We'll need room for as many values as we have keys.
+                                moduleConfigurationValues = new double[moduleConfigurationKeys.Length];
+                            }
+                            //TODO: Aditional scanner types go here
+                            else
+                            { declarationErrorLogger($" has un-recognized Type of '{raycasterType}'."); }
+                            //Scanning modules have their own configuration, but they tell us everything we 
+                            //need to get that configuration for them. They also handle default values on
+                            //their end, so we can basically force-feed them raw config.
+                            if (scanModule != null)
+                            {
+                                for (int i = 0; i < moduleConfigurationKeys.Length; i++)
+                                {
+                                    moduleConfigurationValues[i] =
+                                        iniReadWrite.Get(sectionHeader, moduleConfigurationKeys[i]).ToDouble(-1);
+                                }
+                                //Send retrieved configuration to the scanning module
+                                scanModule.configureModuleByArray(moduleConfigurationValues);
+                                //We should have everything we need to make a new Raycaster.
+                                raycaster = new Raycaster(sb, scanModule, declarationName);
+                            }
+                            else
+                            //If there's no scan module, this raycaster can't function, and trying to
+                            //use it would probably cause a crash (Because there's no null checking out
+                            //that way). We're going to keep this object for now, so the second pass on
+                            //tallies can operate normally. But after that, we'll remove this object from 
+                            //the working dictionary.
+                            { flawedRaycasters.Add(declarationName); }
+                            //Even if we ended up with a flawed raycaster, we're going to behave as if 
+                            //we didn't. So next up is the name check.
+                            if (!isElementNameInUse(declarationName, sectionHeader))
+                            {
+                                evalRaycasters.Add(raycaster.programName, raycaster);
+                                //Unlike the other global objects, Raycasters do not implement IHasElement.
+                                //So we'll pass in a null here and have handling on the other end in 
+                                //case the user tries to use it.
+                                configuredElements.Add(declarationName, null);
+                            }
+                        }
+                        else
+                        //If we get here, we have something that is Shipware config, that has four elements,
+                        //but we don't recognize its type. That's grounds for issuing an error.
+                        {
+                            if (splitHeader[1] == _DECLARATION_PREFIX)
+                            //This is definately a declaration, there's probaby something wrong with the
+                            //specified type.
+                            {
+                                textLog.addError($"{sectionHeader} referenced the unknown declaration " +
+                                    $"type '{declarationType}'.");
+                            }
+                            else
+                            //This isn't even a declaration. How even did we get here?
+                            {
+                                textLog.addWarning($"{sectionHeader} has the format of a declaration " +
+                                    $"header but lacks the '{_DECLARATION_PREFIX}' prefix and has been " +
+                                    $"discarded.");
+                            }
+                        }
+                    }
+                    //else
+                    //This branch is where non-declarations on the PB would head to. 
+                    //{ }
+                }
+
+                //Now that we have at least a framework for all our script objects, we make a second pass
+                //to create any nessecary links from one script object to another 
+                debugDisplay.WriteText($"  Beginning second pass on {raycasterTallies.Count} Raycaster tallies\n", true);
+
+                //From this point onward, we'll be manually setting the declarationType at the head of each loop.
+                declarationType = "Tally";
+                //Our first step on the second pass is to try to link raycaster tallies with their raycasters.
+                for (int i = 0; i < raycasterTallies.Count; i++)
+                {
+                    string sectionHeader = raycasterTallySectionHeaders[i];
+                    TallyGeneric raycasterTally = raycasterTallies[i];
+                    declarationName = raycasterTally.programName;
+
+                    //Go back to this tally's declaration section and check to see if there's a raycaster 
+                    //defined there
+                    iniValue = iniReadWrite.Get(sectionHeader, "Raycaster");
+                    if (iniValue.IsEmpty)
+                    {
+                        //It's fine if we didn't find a value for the Raycaster key... unless we haven't
+                        //already forced the tally's max.
+                        if (!raycasterTally.maxForced)
+                        {
+                            declarationErrorLogger("'s Type of 'Raycaster' requires either a Max or a " +
+                                "linked Raycaster to be set in configuration.");
+                        }
+                    }
+                    else
+                    {
+                        string raycasterName = iniValue.ToString();
+                        //If we have a raycaster name, but max on the tally has already been forced, we
+                        //have a conflict. Inform the user.
+                        if (raycasterTally.maxForced)
+                        {
+                            //This is a warning, not an error, so we don't use the logger.
+                            textLog.addWarning($"{declarationType} {declarationName} specifies " +
+                                $"both a Max and a linked Raycaster, '{raycasterName}'. Only one of these " +
+                                $"values is required. The linked Raycaster has been ignored.");
+                        }
+                        else
+                        {
+                            //If the string we just retrieved matches the name of one of the raycasters we've 
+                            //already retrieved...
+                            Raycaster raycaster;
+                            if (evalRaycasters.TryGetValue(raycasterName, out raycaster))
+                            { raycasterTally.forceMax(raycaster.getModuleRequiredCharge()); }
+                            else
+                            {
+                                declarationErrorLogger(" tried to reference the unconfigured " +
+                                    $"Raycaster '{raycasterName}'.");
+                            }
+                        }
+                    }
+                }
+
+                //Next is the second pass on Triggers.
+                //From the second pass of trigger configuration, we read:
+                //Tally: The name of the Tally this trigger will watch
+                //ActionSet: The name of the ActionSet this trigger will operate
+                //LessOrEqualValue: When the watched Tally falls below this value, the commandLess will be sent
+                //LessOrEqualCommand: The command to be sent when we're under the threshold
+                //GreaterOrEqualValue: When the watched Tally exceeds this value, the commandGreater will be sent
+                //GreaterOrEqualCommand: The command to be sent when we're over the threshold
+                debugDisplay.WriteText($"  Beginning second pass on {evalTriggers.Count} Triggers\n", true);
+                declarationType = "Trigger";
+                foreach (Trigger trigger in evalTriggers.Values)
+                {
+                    Tally tally = null;
+                    ActionSet set = null;
+                    declarationName = trigger.programName;
+                    string sectionHeader = $"{_SCRIPT_PREFIX}.{_DECLARATION_PREFIX}.Trigger.{declarationName}";
+                    //We already know this section header is here, so we won't bother with any checks to 
+                    //make sure it's there.
+
+                    //A trigger needs to have two pieces of information: A Tally to watch, and an 
+                    //ActionSet to manipulate.
+                    iniValue = iniReadWrite.Get(sectionHeader, "Tally");
+                    if (!iniValue.IsEmpty)
+                    {
+                        string tallyName = iniValue.ToString();
+                        //Try to match the tallyName to a configured Tally
+                        if (evalTallies.TryGetValue(tallyName, out tally))
+                        { trigger.targetTally = tally; }
+                        else
+                        { declarationErrorLogger($" tried to reference the unconfigured Tally '{tallyName}'."); }
+                    }
+                    else
+                    { declarationErrorLogger(" has a missing or unreadable Tally."); }
+
+                    iniValue = iniReadWrite.Get(sectionHeader, "ActionSet");
+                    if (!iniValue.IsEmpty)
+                    {
+                        string setName = iniValue.ToString();
+                        if (evalSets.TryGetValue(setName, out set))
+                        { trigger.targetSet = set; }
+                        else
+                        { declarationErrorLogger($" tried to reference the unconfigured ActionSet '{setName}'."); }
+                    }
+                    else
+                    { declarationErrorLogger(" has a missing or unreadable ActionSet."); }
+
+                    //The tally and the set are the most important pieces of information we need, but 
+                    //the trigger still needs to know when it should act on those.
+                    Action<bool, string> getCommandFromConfig = (isLess, keyPrefix) =>
+                    {
+                        double value;
+                        //Check for lessOrEqual and greaterOrEqual scenarios
+                        iniValue = iniReadWrite.Get(sectionHeader, $"{keyPrefix}Value");
+                        if (!iniValue.IsEmpty)
+                        {
+                            value = iniValue.ToDouble();
+                            iniValue = iniReadWrite.Get(sectionHeader, $"{keyPrefix}Command");
+                            if (!iniValue.IsEmpty)
+                            {
+                                string commandString = iniValue.ToString().ToLowerInvariant();
+                                //Match the commandString to a boolean that Trigger will understand
+                                if (commandString == "on")
+                                { trigger.setScenario(isLess, value, _TRUE);
+                                }
+                                else if (commandString == "off")
+                                { trigger.setScenario(isLess, value, _FALSE);
+                                }
+                                else if (commandString == "switch")
+                                {
+                                    declarationErrorLogger($" specifies a {keyPrefix}Command of 'switch', " +
+                                        $"which cannot be used for triggers.");
+                                }
+                                else
+                                {
+                                    declarationErrorLogger($" has a missing or invalid {keyPrefix}Command. " +
+                                        $"Valid commands are 'on' and 'off'.");
+                                }
+                            }
+                            else
+                            { declarationErrorLogger($" specifies a {keyPrefix}Value but no {keyPrefix}Command."); }
+                        }
+                    };
+                    getCommandFromConfig(_TRUE, "LessOrEqual");
+                    getCommandFromConfig(_FALSE, "GreaterOrEqual");
+
+                    //If we didn't find at least one scenario for this trigger, we can assume that 
+                    //something is wrong.
+                    if (!trigger.hasScenario())
+                    { declarationErrorLogger(" does not define a valid LessOrEqual or GreaterOrEqual scenario."); }
+
+                    //Handling for what to do if there's no scenario is baked in to the object. But there
+                    //isn't a way to deal with not having a tally or a set, so if that's happened, this
+                    //object will need to be culled in the third pass.
+                    if (tally == null || set == null)
+                    { flawedTriggers.Add(declarationName); }
+                }
+
+                //In the second pass on ActionSets, we read: 
+                //  DelayOn: How many update tics should be skipped when this set is On
+                //  DelayOff
+                //  IGCChannel: The channel that IGC messages should be sent on
+                //  IGCMessageOn: The message that will be sent on the IGCChannel when this set is toggled On
+                //  IGCMessageOff
+                //  ActionSetsLinkedToOn: A list of ActionSets and the states they should be set to when this set is toggled On
+                //  ActionSetsLinkedToOff
+                //  TriggersLinkedToOn: A list of Triggers and if they should be armed or disarmed when this set is toggled On
+                //  TriggersLinkedToOff
+                //Now that we have objects corresponding to all the config on the PB, we can make the 
+                //final pass where we handle ActionSets that manipulate other script objects.
+                List<KeyValuePair<string, bool>> parsedStateList = new List<KeyValuePair<string, bool>>();
+                debugDisplay.WriteText($"  Beginning second pass on {evalSets.Count} ActionSets\n", true);
+                declarationType = "ActionSet";
+                foreach (ActionSet set in evalSets.Values)
+                {
+                    declarationName = set.programName;
+                    string sectionHeader = $"{_SCRIPT_PREFIX}.{_DECLARATION_PREFIX}.ActionSet.{declarationName}";
+                    string errorTitle = $"{declarationType} {declarationName}";
+                    //string targetKey, troubleID;
+                    string targetKey = "";
+                    //Instead of having a troubleID string that I update on each branch of the second 
+                    //pass to keep up with the changing targetKey, this lambda will do that for me.
+                    //Micro-optimizations!
+                    Func<string> targetKeyLocationInfo = () =>
+                    { return $"'s {targetKey} list"; };
+                    //Also, I use this exact error message on five seperate occasions. Good opportunity 
+                    //to save some characters. 
+                    Action<string> unconfiguredSetLogger = (setName) =>
+                    {
+                        declarationErrorLogger($"{targetKeyLocationInfo} references the unconfigured " +
+                            $"ActionSet {setName}.");
+                    };
+                    ActionSet targetSet = null;
+                    Trigger targetTrigger = null;
+                    Raycaster targetRaycaster = null;
+
+                    //We'll start with ActionPlanUpdate.
+                    //DelayOn and DelayOff. These will actually be stored in an ActionPlan, but we
+                    //need to know if one of the values is present before we create the object.
+                    //If no value is found, a zero will be returned.
+                    int delayOn = iniReadWrite.Get(sectionHeader, $"DelayOn").ToInt32();
+                    int delayOff = iniReadWrite.Get(sectionHeader, $"DelayOff").ToInt32();
+                    //If one of the delay values isn't 0...
+                    if (delayOn != 0 || delayOff != 0)
+                    {
+                        //Create a new action plan
+                        ActionPlanUpdate updatePlan = new ActionPlanUpdate(script);
+                        //Store the values we got. No need to run any checks here, they'll be fine
+                        //if we pass them zeros
+                        updatePlan.delayOn = delayOn;
+                        updatePlan.delayOff = delayOff;
+                        //Add the update plan to this ActionSet.
+                        set.addActionPlan(updatePlan);
+                    }
+
+                    //ActionPlanIGC
+                    iniValue = iniReadWrite.Get(sectionHeader, $"IGCChannel");
+                    if (!iniValue.IsEmpty)
+                    {
+                        string channel = iniValue.ToString();
+                        //Create a new action plan, using the string we collected as the channel
+                        ActionPlanIGC igcPlan = new ActionPlanIGC(program.IGC, channel);
+                        iniValue = iniReadWrite.Get(sectionHeader, $"IGCMessageOn");
+                        if (!iniValue.IsEmpty)
+                        { igcPlan.messageOn = iniValue.ToString(); }
+                        iniValue = iniReadWrite.Get(sectionHeader, $"IGCMessageOff");
+                        if (!iniValue.IsEmpty)
+                        { igcPlan.messageOff = iniValue.ToString(); }
+                        //Last step is to make sure we got some config
+                        if (igcPlan.hasAction())
+                        { set.addActionPlan(igcPlan); }
+                        else
+                        {
+                            textLog.addError($"{errorTitle} has configuration for sending an IGC message " +
+                                $"on the channel '{channel}', but does not have readable config on what " +
+                                $"messages should be sent.");
+                        }
+                    }
+
+                    //ActionPlanActionSet
+                    targetKey = "ActionSetsLinkedToOn";
+                    iniValue = iniReadWrite.Get(sectionHeader, targetKey);
+                    if (!iniValue.IsEmpty)
+                    {
+                        //troubleID = $"{errorTitle}'s {targetKey} list";
+                        parseStateList(iniValue.ToString(), parsedStateList, declarationErrorLogger, 
+                            targetKeyLocationInfo.Invoke());
+                        foreach (KeyValuePair<string, bool> pair in parsedStateList)
+                        {
+                            //Try to match the named set to one of our actual sets
+                            if (evalSets.TryGetValue(pair.Key, out targetSet))
+                            {
+                                ActionPlanActionSet setPlan = new ActionPlanActionSet(targetSet);
+                                setPlan.setReactionToOn(pair.Value);
+                                set.addActionPlan(setPlan);
+                            }
+                            //If we can't match the key from this pair to an existing set, log an error.
+                            else
+                            { unconfiguredSetLogger(pair.Key);  }
+                        }
+                    }
+                    //Handling ActionSetOff is functionally identical to the process for ActionSetOn.
+                    targetKey = "ActionSetsLinkedToOff";
+                    iniValue = iniReadWrite.Get(sectionHeader, targetKey);
+                    if (!iniValue.IsEmpty)
+                    {
+                        //troubleID = $"{errorTitle}'s {targetKey} list";
+                        parseStateList(iniValue.ToString(), parsedStateList, declarationErrorLogger,
+                            targetKeyLocationInfo.Invoke());
+                        foreach (KeyValuePair<string, bool> pair in parsedStateList)
+                        {
+                            if (evalSets.TryGetValue(pair.Key, out targetSet))
+                            {
+                                ActionPlanActionSet setPlan = new ActionPlanActionSet(targetSet);
+                                setPlan.setReactionToOff(pair.Value);
+                                set.addActionPlan(setPlan);
+                            }
+                            else
+                            { unconfiguredSetLogger(pair.Key); }
+                        }
+                    }
+
+                    //ActionPlanTrigger
+                    //Which is functionally identical to how we handle AP:AS
+                    targetKey = "TriggersLinkedToOn";
+                    iniValue = iniReadWrite.Get(sectionHeader, targetKey);
+                    if (!iniValue.IsEmpty)
+                    {
+                        //troubleID = $"{errorTitle}'s {targetKey} list";
+                        parseStateList(iniValue.ToString(), parsedStateList, declarationErrorLogger,
+                            targetKeyLocationInfo.Invoke());
+                        foreach (KeyValuePair<string, bool> pair in parsedStateList)
+                        {
+                            //Try to match the named set to one of our actual sets
+                            if (evalTriggers.TryGetValue(pair.Key, out targetTrigger))
+                            {
+                                ActionPlanTrigger triggerPlan = new ActionPlanTrigger(targetTrigger);
+                                triggerPlan.setReactionToOn(pair.Value);
+                                set.addActionPlan(triggerPlan);
+                            }
+                            //If we can't match the key from this pair to an existing set, log an error.
+                            else
+                            { unconfiguredSetLogger(pair.Key); }
+                        }
+                    }
+                    targetKey = "TriggersLinkedToOff";
+                    iniValue = iniReadWrite.Get(sectionHeader, targetKey);
+                    if (!iniValue.IsEmpty)
+                    {
+                        //troubleID = $"{errorTitle}'s {targetKey} list";
+                        parseStateList(iniValue.ToString(), parsedStateList, declarationErrorLogger,
+                            targetKeyLocationInfo.Invoke());
+                        foreach (KeyValuePair<string, bool> pair in parsedStateList)
+                        {
+                            if (evalTriggers.TryGetValue(pair.Key, out targetTrigger))
+                            {
+                                ActionPlanTrigger triggerPlan = new ActionPlanTrigger(targetTrigger);
+                                triggerPlan.setReactionToOff(pair.Value);
+                                set.addActionPlan(triggerPlan);
+                            }
+                            else
+                            { unconfiguredSetLogger(pair.Key); }
+                        }
+                    }
+
+                    //RaycastPerformedOnState
+                    targetKey = "RaycastPerformedOnState";
+                    iniValue = iniReadWrite.Get(sectionHeader, targetKey);
+                    if (!iniValue.IsEmpty)
+                    {
+                        //troubleID = $"{errorTitle}'s {targetKey} list";
+                        parseStateList(iniValue.ToString(), parsedStateList, declarationErrorLogger,
+                            targetKeyLocationInfo.Invoke());
+                        foreach (KeyValuePair<string, bool> pair in parsedStateList)
+                        {
+                            //Try to match the named raycaster to one of our configured raycasters
+                            if (evalRaycasters.TryGetValue(pair.Key, out targetRaycaster))
+                            {
+                                ActionPlanRaycaster raycasterPlan = new ActionPlanRaycaster(targetRaycaster);
+                                //Unlike other state lists, for raycasters, the boolean portion of each 
+                                //element tells us if we perform the scan when the ActionSet is switched
+                                //On, or if we perform the scan when it's switched Off.
+                                if (pair.Value)
+                                { raycasterPlan.scanOn = _TRUE; }
+                                else
+                                { raycasterPlan.scanOff = _TRUE; }
+                                set.addActionPlan(raycasterPlan);
+                            }
+                            //If we can't match the key from this pair to an existing set, log an error.
+                            else
+                            { unconfiguredSetLogger(pair.Key); }
+                        }
+                    }
+                }
+
+                //The 'third pass' is just removing any objects we marked as flawed on the first two passes.
+                debugDisplay.WriteText($"  Culling {flawedTriggers.Count} flawed Triggers and  " +
+                    $"{flawedRaycasters.Count} flawed raycasters.\n", true);
+                foreach (string flawedTriggerName in flawedTriggers)
+                { evalTriggers.Remove(flawedTriggerName); }
+                foreach (string flawedRaycasterName in flawedRaycasters)
+                { evalTriggers.Remove(flawedRaycasterName); }
+
+                debugDisplay.WriteText("evaluateDeclarations complete.\n", true);
+                //If we don't have errors, but we also don't have any tallies or ActionSets...
+                if (textLog.getErrorTotal() == 0 && evalTallies.Count == 0 && evalSets.Count == 0)
+                { textLog.addError($"No readable configuration found on the programmable block."); }
+            }
+            
+            internal int evaluateGrid(out int blockCount)
+            {
+                List<IMyTerminalBlock> blocks = new List<IMyTerminalBlock>();
+                Dictionary<string, Action<IMyTerminalBlock>> actions = compileActions();
+                List<KeyValuePair<string, bool>> parsedData = new List<KeyValuePair<string, bool>>();
+                Action<string> warningLoggerOLD = b => textLog.addWarning(b);
+                Tally tally;
+                ActionSet actionSet;
+                Color color = Color.White;
+                string[] elementNames;
+                string elementName = "";
+                string discreteSectionHeader = "";
+                string surfaceKey = "";
+                //CHECKING FOR USAGE
+                //string troubleID = "";
+                int counter = 0;
+                bool handled;
+                findBlocks<IMyTerminalBlock>(blocks, b =>
+                    (b.IsSameConstructAs(me) && MyIni.HasSection(b.CustomData, tag)));
+                blockCount = blocks.Count;
+                if (blockCount <= 0)
+                { textLog.addError($"No blocks found on this construct with a {tag} INI section."); }
+
+                foreach (IMyTerminalBlock block in blocks)
+                {
+                    //These loggers log warnings.
+                    Action<string> blockWarningLogger = message =>
+                    { textLog.addWarning($"Block '{block.CustomName}'{message}"); };
+                    Action<string> blockAndDiscreteSectionWarningLogger = message =>
+                    { textLog.addWarning($"Block '{block.CustomName}', section {discreteSectionHeader}{message}"); };
+                    //An inline function for retrieving elements. Generates warnings if the 
+                    //specified element can't be found, and has a bit of special handling in case
+                    //the user is trying to reference a Raycaster.
+                    Func<string, Action<string>, IHasElement> retrieveElement = (element, logger) =>
+                    {
+                        IHasElement retrievedElement = null;
+                        if (configuredElements.ContainsKey(element))
+                        {
+                            retrievedElement = configuredElements[element];
+                            //A raycaster doesn't provide an element, so we need to do some handling
+                            //on that front
+                            if (retrievedElement == null)
+                            {
+                                logger($" tried to reference the Raycaster '{element}' as an element. " +
+                                    "Raycasters cannot be used this way: use a linked Tally to view " +
+                                    "their charge, and a DataType with the Raycaster as the DataSource " +
+                                    "to view its report.");
+                            }
+                        }
+                        else
+                        { logger($" tried to reference the unconfigured element '{element}'."); }
+                        return retrievedElement;
+                    };
+
+                    debugDisplay.WriteText($"  Beginning evaluationg for block {block.CustomName}\n", true);
+                    //Whatever kind of block this is, we're going to need to see what's in its 
+                    //CustomData. If that isn't useable...
+                    if (!iniReadWrite.TryParse(block.CustomData, out parseResult))
+                    //...complain.
+                    {
+                        blockWarningLogger(" has had its configuration ignored due to the following " +
+                            $"parsing error found on line {parseResult.LineNo}:\n{parseResult.Error}");
+                    }
+                    else
+                    //My comedic, reference-based genius shall be preserved here for all eternity. Even
+                    //if it is now largely irrelevant to how Shipware operates.
+                    //In the CargoManager, the data is handled by two seperate yet equally important
+                    //objects: the Tallies that store and calculate information and the Reports that 
+                    //display it. These are their stories.
+                    {
+                        handled = _FALSE;
+                        //On most builds, most of what we'll be dealing with are tallies. So let's start there.
+                        debugDisplay.WriteText("    Tally handler starting\n", true);
+                        if (iniReadWrite.ContainsKey(tag, "Tallies"))
+                        { //This is grounds for declaring this block to be handled.
+                            handled = _TRUE;
+                            //Get the 'Tallies' data
+                            iniValue = iniReadWrite.Get(tag, "Tallies");
+                            //Split the Tallies string into individual tally names
+                            elementNames = iniValue.ToString().Split(',').Select(p => p.Trim()).ToArray();
+                            foreach (string name in elementNames)
+                            {
+                                if (!evalTallies.ContainsKey(name))
+                                {
+                                    blockWarningLogger($" tried to reference the unconfigured Tally '{name}'.");
+                                }
+                                else
+                                {
+                                    tally = evalTallies[name];
+                                    if (tally is TallyCargo)
+                                    {
+                                        //Tally Cargos require an inventory. It's kinda their thing.
+                                        if (!block.HasInventory)
+                                        {
+                                            blockWarningLogger($" does not have an inventory and is not " +
+                                                $"compatible with the Type of Tally '{name}'.");
+                                        }
+                                        else
+                                        {
+                                            //For configurations tied to the 'Tallies' key, we use the same set of 
+                                            //Tallies for every inventory on the block.
+                                            for (int i = 0; i < block.InventoryCount; i++)
+                                            //There may be additional tallies in this list that will use this
+                                            //same inventory, or tallies in Inv0Tallies, etc. For now, we'll
+                                            //simply add it to our dictionary and process it later.
+                                            {
+                                                IMyInventory inventory = block.GetInventory(i);
+                                                //If we don't already have a dictionary entry for this 
+                                                //inventory...
+                                                if (!evalContainers.ContainsKey(inventory))
+                                                //...create one
+                                                { evalContainers.Add(inventory, new List<TallyCargo>()); }
+                                                //Now that we're sure there's a place to put it, add this
+                                                //tally to this inventory's entry.
+                                                evalContainers[inventory].Add((TallyCargo)tally);
+                                            }
+                                        }
+                                    }
+                                    else if (tally is TallyGeneric)
+                                    {
+                                        if (!((TallyGeneric)tally).tryAddBlock(block))
+                                        {
+                                            blockWarningLogger($" is not a {((TallyGeneric)tally).getTypeAsString()} " +
+                                                $"and is not compatible with the Type of Tally '{name}'.");
+                                        }
+                                    }
+                                    else
+                                    //If a tally isn't a TallyCargo or a TallyGeneric or a TallyShield, I done goofed.
+                                    {
+                                        blockWarningLogger($" refrenced the Tally '{name}', which has an unhandled " +
+                                            $"Tally Type. Complain to the script writer, this should be impossible.");
+                                    }
+                                }
+                            }
+                        }
+
+                        //If the block has an inventory, it may have 'Inv<#>Tallies' keys instead. We need
+                        //to check for them.
+                        debugDisplay.WriteText("    Multiple inventory Tally handler starting\n", true);
+                        if (block.HasInventory)
+                        {
+                            for (int i = 0; i < block.InventoryCount; i++)
+                            {
+                                string inventoryKey = $"Inv{i}Tallies";
+                                if (!iniReadWrite.ContainsKey(tag, inventoryKey))
+                                //If the key does not exist, fail silently.
+                                { }
+                                else
+                                {
+                                    //If we manage to find one of these keys, the block can be considered
+                                    //handled.
+                                    handled = _TRUE;
+                                    //Get the names of the specified tallies
+                                    iniValue = iniReadWrite.Get(tag, inventoryKey);
+                                    elementNames = iniValue.ToString().Split(',').Select(p => p.Trim()).ToArray();
+                                    foreach (string name in elementNames)
+                                    {
+                                        if (!evalTallies.ContainsKey(name))
+                                        {
+                                            blockWarningLogger($" tried to reference the unconfigured Tally '{name}' " +
+                                                $"in key {inventoryKey}.");
+                                        }
+                                        else
+                                        {
+                                            tally = evalTallies[name];
+                                            //Before we move on, we need to make sure this is a tallyCargo.
+                                            if (!(tally is TallyCargo))
+                                            {
+                                                blockWarningLogger($" is not compatible with the Type of " +
+                                                    $"Tally '{name}' referenced in key {inventoryKey}.");
+                                            }
+                                            else
+                                            {
+                                                //We already know this block has an inventory (That's how 
+                                                //we got here). Our next step is to add this inventory to
+                                                //evalContainers
+                                                IMyInventory inventory = block.GetInventory(i);
+                                                //If we don't already have a dictionary entry for this 
+                                                //inventory...
+                                                if (!evalContainers.ContainsKey(inventory))
+                                                //...create one
+                                                { evalContainers.Add(inventory, new List<TallyCargo>()); }
+                                                //Now that we're sure there's a place to put it, add this
+                                                //tally to this inventory's entry.
+                                                evalContainers[inventory].Add((TallyCargo)tally);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        //Next up: ActionSets.
+                        debugDisplay.WriteText("    ActionSet handler starting\n", true);
+                        if (iniReadWrite.ContainsKey(tag, "ActionSets"))
+                        {
+                            //From the main section, we read:
+                            //ActionSets: The ActionSet section names that can be found elsewhere in this 
+                            //  block's CustomData.
+                            //We found something we understand, declare handled.
+                            handled = _TRUE;
+                            //Get the 'ActionSets' data
+                            iniValue = iniReadWrite.Get(tag, "ActionSets");
+                            //Pull the individual ActionSet names from the ActionSets key.
+                            elementNames = iniValue.ToString().Split(',').Select(p => p.Trim()).ToArray();
+                            foreach (string name in elementNames)
+                            {
+                                //First things first: Does this ActionSet even exist?
+                                if (!evalSets.ContainsKey(name))
+                                { blockWarningLogger($" tried to reference the unconfigured ActionSet '{name}'."); }
+                                else
+                                {
+                                    actionSet = evalSets[name];
+                                    //The name of the discrete section that will configure this ActionSet 
+                                    //is the PREFIX plus the name of the ActionSet. We'll be using that a 
+                                    //lot, so let's put a handle on it.
+                                    discreteSectionHeader = $"{_SCRIPT_PREFIX}.{name}";
+                                    //Check to see if the user has included an ACTION SECTION
+                                    if (!iniReadWrite.ContainsSection(discreteSectionHeader))
+                                    {
+                                        blockWarningLogger($" references the ActionSet '{name}', but contains " +
+                                            $"no discrete '{discreteSectionHeader}' section that would define actions.");
+                                    }
+                                    else
+                                    {
+                                        IHasActionPlan actionPlan = null;
+                                        //An inline function specifically for retrieving ActionHandlers 
+                                        //from the 'actions' dictionary. And complaining if they don't exist.
+                                        //Used in MAPB and APB branches.
+                                        Func<string, string, Action<IMyTerminalBlock>> retrieveActionHandler = 
+                                            (keyName, actionName) =>
+                                        {
+                                            Action<IMyTerminalBlock> retrievedAction = null;
+                                            iniValue = iniReadWrite.Get(discreteSectionHeader, keyName);
+                                            if (actions.ContainsKey(actionName))
+                                            { retrievedAction = actions[actionName]; }
+                                            //If there is no matching action, complain.
+                                            else
+                                            {
+                                                blockAndDiscreteSectionWarningLogger($" references the unknown " +
+                                                    $"action '{actionName}' as its {keyName}.");
+                                            }
+                                            return retrievedAction;
+                                        };
+
+                                        if (iniReadWrite.ContainsKey(discreteSectionHeader, "Action0Property"))
+                                        {
+                                            //From config for ActionPlanTerminal, we read:
+                                            //Action<#>Property: Which block property will be targeted
+                                            //  by this ActionPart
+                                            //Action<#>OnValue: The value to be applied when this ActionSet
+                                            //  is set to 'on'
+                                            //Action<#>OffValue: The value to be applied when this ActionSet
+                                            //  is set to 'off'
+                                            ActionPlanTerminal terminalPlan = new ActionPlanTerminal(block);
+                                            ActionPart retreivedPart = null;
+                                            counter = 0;
+                                            //Add ActionParts to the terminalPlan until we run out of config.
+                                            while (counter != -1)
+                                            {
+                                                retreivedPart = tryGetActionPartFromConfig(block, discreteSectionHeader, 
+                                                    counter, blockAndDiscreteSectionWarningLogger);
+                                                if (retreivedPart != null)
+                                                {
+                                                    terminalPlan.addPart(retreivedPart);
+                                                    counter++;
+                                                }
+                                                else
+                                                { counter = -1; }
+                                            }
+
+                                            actionPlan = terminalPlan;
+                                        }
+                                        else if (iniReadWrite.ContainsKey(discreteSectionHeader, "ActionsOn") || iniReadWrite.ContainsKey(discreteSectionHeader, "ActionsOff"))
+                                        //Left the above as a single line because VS freaks out otherwise. Why? Dunno.
+
+                                        //If the discrete section contains either ActionsOn or ActionsOff 
+                                        //keys, we need to use a MultiActionPlanBlock.
+                                        //From config for MultiActionPlanBlock, we read:
+                                        //ActionsOn (Default: null): A list of actions to be performed 
+                                        //  on this block when this ActionSet is set to 'on'.
+                                        //ActionsOff (Default: null): A list of actions to be performed 
+                                        //  on this block when thisActionSet is set to 'off'.
+                                        {
+                                            MultiActionPlanBlock mapb = new MultiActionPlanBlock(block);
+                                            //Parses out a comma-seperated list of ActionHandler names and 
+                                            //returns a list of matching ActionHandlers
+                                            Func<string, List<Action<IMyTerminalBlock>>> getActionHandlersForMAPB = (keyName) =>
+                                            {
+                                                List<Action<IMyTerminalBlock>> actionHandlers = null;
+                                                iniValue = iniReadWrite.Get(discreteSectionHeader, keyName);
+                                                if (!iniValue.IsEmpty)
+                                                {
+                                                    string[] configElements = null;
+                                                    actionHandlers = new List<Action<IMyTerminalBlock>>();
+                                                    configElements = iniValue.ToString().Split(',').Select(p => p.Trim()).ToArray();
+                                                    foreach (string actionName in configElements)
+                                                    { actionHandlers.Add(retrieveActionHandler(keyName, actionName)); }
+                                                }
+                                                return actionHandlers;
+                                            };
+                                            mapb.actionsOn = getActionHandlersForMAPB("ActionsOn");
+                                            mapb.actionsOff = getActionHandlersForMAPB("ActionsOff");
+
+                                            actionPlan = mapb;
+                                        }
+                                        else if (iniReadWrite.ContainsKey(discreteSectionHeader, "ActionOn") || iniReadWrite.ContainsKey(discreteSectionHeader, "ActionOff"))
+                                        //If we've got an ActionOn or ActionOff key, we use ActionPlanBlock.
+                                        //APB is functionally identical to MAPB, just with a single action
+                                        //instead of a multitude
+                                        {
+                                            //Create a new block plan with this block as the subject
+                                            ActionPlanBlock apb = new ActionPlanBlock(block);
+                                            Func<string, Action<IMyTerminalBlock>> getActionFromConfig = (keyName) =>
+                                            {
+                                                iniValue = iniReadWrite.Get(discreteSectionHeader, keyName);
+                                                if (!iniValue.IsEmpty)
+                                                { return retrieveActionHandler(keyName, iniValue.ToString()); }
+                                                else
+                                                { return null; }
+                                            };
+                                            apb.actionOn = getActionFromConfig("ActionOn");
+                                            apb.actionOff = getActionFromConfig("ActionOff");
+                                            actionPlan = apb;
+                                        }
+                                        //If we came away with an action plan, and that plan has at least one action...
+                                        if (actionPlan?.hasAction() ?? _FALSE)
+                                        //Go ahead and add this ActionPlan to the ActionSet
+                                        { actionSet.addActionPlan(actionPlan); }
+                                        //If we didn't successfully register an action, complain.
+                                        else
+                                        {
+                                            blockAndDiscreteSectionWarningLogger(" does not define any actions to be taken " +
+                                                "when the ActionSet changes state. If you're listing Terminal Actions, " +
+                                                "make sure you're starting at index 0.");
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        //Tally and ActionSet configuration can be on almost any block. But some 
+                        //configuration can only be used on certain block types
+                        //Raycasters are now largely configured from the PB. But we still have to tell
+                        //them where their cameras are.
+                        //_debugDisplay.WriteText("    Camera handler\n", true);
+                        if (block is IMyCameraBlock)
+                        {
+                            if (iniReadWrite.ContainsKey(tag, "Raycasters"))
+                            {
+                                handled = _TRUE;
+                                iniValue = iniReadWrite.Get(tag, "Raycasters");
+                                elementNames = iniValue.ToString().Split(',').Select(p => p.Trim()).ToArray();
+                                foreach (string name in elementNames)
+                                {
+                                    if (!evalRaycasters.ContainsKey(name))
+                                    { blockWarningLogger($" tried to reference the unconfigured Raycaster '{name}'."); }
+                                    else
+                                    { evalRaycasters[name].addCamera((IMyCameraBlock)block); }
+                                }
+                            }
+                        }
+
+                        //SurfaceProviders can have config for Pages and Reportables
+                        //_debugDisplay.WriteText("    Surface handler\n", true);
+                        //Note: Nearly everything is a SurfaceProvider now. We could check the surface
+                        //count to determine if the block actually has any screens, but we basically
+                        //do that after the cast, so adding a check at this step probably isn't needed.
+                        if (block is IMyTextSurfaceProvider)
+                        {
+                            IMyTextSurfaceProvider surfaceProvider = (IMyTextSurfaceProvider)block;
+                            for (int i = 0; i < surfaceProvider.SurfaceCount; i++)
+                            {
+                                //Each surface on the block may have its own config
+                                surfaceKey = $"Surface{i}Pages";
+                                if (iniReadWrite.ContainsKey(tag, surfaceKey))
+                                {
+                                    //We're probably going to put something on this surface. Put a handle on it
+                                    IMyTextSurface surface = surfaceProvider.GetSurface(i);
+                                    //We might have an MFD. Go ahead and make a variable so we can make decisions.
+                                    MFD mfd = null;
+                                    IReportable reportable = null;
+                                    //Once we've established that there's config for this particular 
+                                    //surface, the first part of the process is identical to retrieving
+                                    //data from the rest of the common config section.
+                                    handled = _TRUE;
+                                    iniValue = iniReadWrite.Get(tag, surfaceKey);
+                                    string[] pageNames = iniValue.ToString().Split(',').Select(p => p.Trim()).ToArray();
+                                    //The first difference depends on how many discrete sections we're 
+                                    //being pointed to. If there's more than one, this is an MFD, and
+                                    //we need a name.
+                                    if (pageNames.Length > 1)
+                                    {
+                                        string mfdKey = $"Surface{i}MFD";
+                                        if (!iniReadWrite.ContainsKey(tag, mfdKey))
+                                        {
+                                            blockWarningLogger($", key {surfaceKey} references multiple " +
+                                                $"pages which must be managed by an MFD, but has no '{mfdKey}' " +
+                                                $"key to define that object's name.");
+                                        }
+                                        else
+                                        {
+                                            string mfdName = iniReadWrite.Get(tag, mfdKey).ToString();
+                                            //_debugDisplay.WriteText("      Have MFD name\n", true);
+                                            if (evalMFDs.ContainsKey(mfdName))
+                                            {
+                                                blockWarningLogger($", key {mfdKey} declares the MFD '{mfdName}' " +
+                                                    $"but this name is already in use.");
+                                            }
+                                            else
+                                            { mfd = new MFD(mfdName); }
+                                        }
+                                    }
+                                    foreach (string pageName in pageNames)
+                                    {
+                                        //_debugDisplay.WriteText($"        Beginning loop for element '{name}'\n", true);
+                                        discreteSectionHeader = $"{_SCRIPT_PREFIX}.{pageName}";
+                                        if (!iniReadWrite.ContainsSection(discreteSectionHeader))
+                                        {
+                                            blockWarningLogger($", key {surfaceKey} declares the page '{pageName}', " +
+                                                $"but contains no discrete '{discreteSectionHeader}' section that would " +
+                                                $"configure that page.");
+                                        }
+                                        else
+                                        {
+                                            //At this point, we should have everything we need to start constructing a page.
+                                            reportable = null;
+                                            //If this is a report, it will have an 'Elements' key.
+                                            if (iniReadWrite.ContainsKey(discreteSectionHeader, "Elements"))
+                                            {
+                                                //_debugDisplay.WriteText("          Entering Report branch\n", true);
+                                                iniValue = iniReadWrite.Get(discreteSectionHeader, "Elements");
+                                                Report report = null;
+                                                List<IHasElement> elementRefs = new List<IHasElement>();
+                                                elementNames = iniValue.ToString().Split(',').Select(p => p.Trim()).ToArray();
+                                                foreach (string element in elementNames)
+                                                {
+                                                    //Is this a blank slot in the report?
+                                                    if (element.ToLowerInvariant() == "blank")
+                                                    //Just add a null to the list. The report will know how to handle 
+                                                    //this.
+                                                    { elementRefs.Add(null); }
+                                                    else
+                                                    {
+                                                        //retrieveElement returns a null if the the element is 
+                                                        //unconfigured or otherwise un-usable. We'll just pass
+                                                        //this directly into the list, and the Report will treat
+                                                        //it as a blank.
+                                                        elementRefs.Add(retrieveElement(element, 
+                                                            blockAndDiscreteSectionWarningLogger));
+                                                    }
+                                                }
+                                                //Create a new report with the data we've collected so far.
+                                                report = new Report(surface, elementRefs);
+                                                //Now that we have a report, we need to see if the user wants anything 
+                                                //special done with it.
+                                                //Title
+                                                iniValue = iniReadWrite.Get(discreteSectionHeader, "Title");
+                                                if (!iniValue.IsEmpty)
+                                                { report.title = iniValue.ToString(); }
+                                                //FontSize
+                                                iniValue = iniReadWrite.Get(discreteSectionHeader, "FontSize");
+                                                if (!iniValue.IsEmpty)
+                                                { report.fontSize = iniValue.ToSingle(); }
+                                                //Font
+                                                iniValue = iniReadWrite.Get(discreteSectionHeader, "Font");
+                                                if (!iniValue.IsEmpty)
+                                                { report.font = iniValue.ToString(); }
+
+                                                Func<string, float> getPadding = (edge) =>
+                                                { return (float)(iniReadWrite.Get(discreteSectionHeader, $"Padding{edge}").ToDouble(0)); };
+                                                float padLeft = getPadding("Left");
+                                                float padRight = getPadding("Right");
+                                                float padTop = getPadding("Top");
+                                                float padBottom = getPadding("Bottom");
+
+                                                //Possibly I should've just broken down and written a seperate method for this.
+                                                //Then I could just pass the values by reference and have the method handle 
+                                                //setting them to 0.
+                                                //But I can't overstate how much I hate having to pass half a dozen things into
+                                                //a method just to generate a proper warning message.
+                                                Func<string, float, string, float, bool> paddingExceeds100 =
+                                                    (firstEdgeName, firstEdgeValue, secondEdgeName, secondEdgeValue) =>
+                                                {
+                                                    if (firstEdgeValue + secondEdgeValue > 100)
+                                                    {
+                                                        blockAndDiscreteSectionWarningLogger($" has padding values in excess " +
+                                                            $"of 100% for edges {firstEdgeName} and {secondEdgeName} " +
+                                                            $"which have been ignored.");
+                                                        return _TRUE;
+                                                    }
+                                                    return _FALSE;
+                                                };
+                                                if (paddingExceeds100("Left", padLeft, "Right", padRight))
+                                                {
+                                                    padLeft = 0;
+                                                    padRight = 0;
+                                                }
+                                                if (paddingExceeds100("Top", padTop, "Bottom", padBottom))
+                                                {
+                                                    padTop = 0;
+                                                    padBottom = 0;
+                                                }
+
+                                                //Columns. IMPORTANT: Set anchors is no longer called during object
+                                                //creation, and therefore MUST be called before the report is finished.
+                                                //iniValue = _iniReadWrite.Get(sectionHeader, "Columns");
+                                                int columns = iniReadWrite.Get(discreteSectionHeader, "Columns").ToInt32(1);
+                                                bool titleObeysPadding = iniReadWrite.Get(discreteSectionHeader, "TitleObeysPadding").ToBoolean(_FALSE);
+                                                //Once we have all the data, we can call setAnchors.
+                                                report.setAnchors(columns, padLeft, padRight, padTop, padBottom,
+                                                    titleObeysPadding, sb);
+
+                                                //We've should have all the available configuration for this report. Now we'll point
+                                                //Reportable at it and move on.
+                                                reportable = report;
+                                            }
+
+                                            //If this is a GameScript, it will have a 'Script' key.
+                                            else if (iniReadWrite.ContainsKey(discreteSectionHeader, "Script"))
+                                            {
+                                                //_debugDisplay.WriteText("          Entering Script branch\n", true);
+                                                //TODO? I could check the Script value against a list of 
+                                                //available scripts if I wanted to. See 20230227 and 20240821
+                                                //for thoughts on the matter.
+                                                GameScript script = new GameScript(surface,
+                                                    iniReadWrite.Get(discreteSectionHeader, "Script").ToString());
+                                                //Scripts are pretty straightforward. Off to reportable with them.
+                                                reportable = script;
+                                            }
+
+                                            //If this is a WallOText, it will have a 'DataType' key.
+                                            else if (iniReadWrite.ContainsKey(discreteSectionHeader, "DataType"))
+                                            {
+                                                //_debugDisplay.WriteText("          Entering WOT branch\n", true);
+                                                string type = iniReadWrite.Get(discreteSectionHeader, "DataType").ToString().ToLowerInvariant();
+                                                //The broker that will store the data for this WallOText
+                                                IHasData broker = null;
+
+                                                if (type == "log")
+                                                //Logs and Storage will not need a DataSource; there can be only one
+                                                { broker = new LogBroker(textLog); }
+                                                else if (type == "storage")
+                                                { broker = new StorageBroker(this); }
+                                                //CustomData, DetailInfo, CustomInfo, and Raycasters need to have a data source
+                                                //specified.
+                                                //CustomData, DetailInfo, and CustomInfo all get their data from blocks.
+                                                else if (type == "customdata" || type == "detailinfo" || type == "custominfo")
+                                                {
+                                                    //Check to see if the user provided a DataSource
+                                                    if (!iniReadWrite.ContainsKey(discreteSectionHeader, "DataSource"))
+                                                    {
+                                                        blockAndDiscreteSectionWarningLogger($" has a DataType of {type}, " +
+                                                            $"but a missing or unreadable DataSource.");
+                                                    }
+                                                    else
+                                                    {
+                                                        string source = iniReadWrite.Get(discreteSectionHeader, "DataSource").ToString();
+                                                        //Make a good faith effort to find the block the user is after.
+                                                        IMyTerminalBlock subject = GridTerminalSystem.GetBlockWithName(source);
+                                                        //If we found a block, and we need a CustomDataBroker
+                                                        if (subject != null && type == "customdata")
+                                                        { broker = new CustomDataBroker(subject); }
+                                                        //If we found a block, and we need a DetailInfoBroker
+                                                        else if (subject != null && type == "detailinfo")
+                                                        { broker = new DetailInfoBroker(subject); }
+                                                        else if (subject != null && type == "custominfo")
+                                                        { broker = new CustomInfoBroker(subject); }
+                                                        //If we didn't find a block, complain.
+                                                        else
+                                                        {
+                                                            blockAndDiscreteSectionWarningLogger($" tried to reference the " +
+                                                                $"unknown block '{source}' as a DataSource.");
+                                                        }
+                                                    }
+                                                }
+                                                //Raycasters get their data from Raycaster objects.
+                                                else if (type == "raycaster")
+                                                {
+                                                    //_debugDisplay.WriteText("          Entering Raycaster branch\n", true);
+                                                    //Check to see if the user provided a DataSource
+                                                    if (!iniReadWrite.ContainsKey(discreteSectionHeader, "DataSource"))
+                                                    {
+                                                        blockAndDiscreteSectionWarningLogger($" has a DataType of {type}, " +
+                                                            $"but a missing or unreadable DataSource.");
+                                                    }
+                                                    else
+                                                    {
+                                                        //_debugDisplay.WriteText("          Found DataSource\n", true);
+                                                        string source = iniReadWrite.Get(discreteSectionHeader, "DataSource").ToString();
+                                                        //Check our list of Raycasters to see if one has a matching key
+                                                        if (evalRaycasters.ContainsKey(source))
+                                                        { broker = new RaycastBroker(evalRaycasters[source]); }
+                                                        //If we didn't find matching raycaster, complain.
+                                                        else
+                                                        {
+                                                            blockAndDiscreteSectionWarningLogger($" tried to reference the " +
+                                                                $"unconfigured Raycaster '{source}' as a DataSource.");
+                                                        }
+                                                    }
+                                                }
+                                                else
+                                                //If we don't recognize the DataType, complain.
+                                                {
+                                                    blockAndDiscreteSectionWarningLogger($" tried to reference the unknown " +
+                                                        $"data type '{type}'.");
+                                                }
+                                                //If we came through that with some sort of broker
+                                                if (broker != null)
+                                                {
+                                                    //Create a new WallOText using our surface and the broker we've found.
+                                                    WallOText wall = new WallOText(surface, broker, sb);
+                                                    //Configure any other settings that the user has seen fit to specify.
+                                                    //FontSize
+                                                    iniValue = iniReadWrite.Get(discreteSectionHeader, "FontSize");
+                                                    if (!iniValue.IsEmpty)
+                                                    { wall.fontSize = iniValue.ToSingle(); }
+                                                    //Font
+                                                    iniValue = iniReadWrite.Get(discreteSectionHeader, "Font");
+                                                    if (!iniValue.IsEmpty)
+                                                    { wall.font = iniValue.ToString(); }
+                                                    //CharPerLine
+                                                    iniValue = iniReadWrite.Get(discreteSectionHeader, "CharPerLine");
+                                                    if (!iniValue.IsEmpty)
+                                                    //The PrepareText method that applies the charPerLine word wrap is quite 
+                                                    //ineffecient, and I only tolerate it because most of the WoT types include some
+                                                    //sort of mechanism that reduces the number of times it's called. Not so with 
+                                                    //DetailInfo, which conceivably could be calling it every single update. To avoid
+                                                    //that, and because DetailInfo is already formatted, we simply pitch a fit if
+                                                    //the user tries to use the two in conjunction.
+                                                    //The new customInfo is basically the same thing, so we'll add it to the list
+                                                    {
+                                                        if (type == "detailinfo" || type == "custominfo")
+                                                        {
+                                                            blockAndDiscreteSectionWarningLogger(" tried to set a CharPerLine " +
+                                                                $"limit with the {type} DataType. This is not allowed.");
+                                                        }
+                                                        else
+                                                        { wall.setCharPerLine(iniValue.ToInt32()); }
+                                                    }
+                                                    //One last thing: If this is a log, we want to know where it lives.
+                                                    if (type == "log")
+                                                    { evalLogReports.Add(wall); }
+                                                    //Send this WallOText on its way with a fond fairwell.
+                                                    reportable = wall;
+                                                }
+                                            }
+
+                                            //One last step: All of our reportables have fore and back colors. If we actually have
+                                            //a reportable at this point, we should see if the user wants to set them to something.
+                                            if (reportable != null)
+                                            {
+                                                //Foreground color
+                                                if (colorPalette.tryGetColorFromConfig(blockAndDiscreteSectionWarningLogger, iniReadWrite,
+                                                    discreteSectionHeader, "ForeColor", out color))
+                                                { ((IHasColors)reportable).foreColor = color; }
+                                                if (colorPalette.tryGetColorFromConfig(blockAndDiscreteSectionWarningLogger, iniReadWrite,
+                                                    discreteSectionHeader, "BackColor", out color))
+                                                { ((IHasColors)reportable).backColor = color; }
+                                            }
+                                        }
+                                        //There's a couple of extra steps that we need to go through if 
+                                        //we're dealing with an MFD
+                                        if (mfd != null && reportable != null)
+                                        {
+                                            //This page may have a ShowOnActionState key, meaning we need
+                                            //to hook it to an ActionSet.
+                                            iniValue = iniReadWrite.Get(discreteSectionHeader, "ShowOnActionState");
+                                            if (!iniValue.IsEmpty)
+                                            {
+                                                parseStateList(iniValue.ToString(), parsedData, blockAndDiscreteSectionWarningLogger);
+                                                foreach (KeyValuePair<string, bool> pair in parsedData)
+                                                {
+                                                    //Try to match the named ActionSet to one of our configured ActionSets
+                                                    if (!evalSets.TryGetValue(pair.Key, out actionSet))
+                                                    {
+                                                        blockAndDiscreteSectionWarningLogger($" tried to reference the unconfigured " +
+                                                            $"ActionSet {pair.Key}.");
+                                                    }
+                                                    else
+                                                    {
+                                                        ActionPlanMFD mfdPlan = new ActionPlanMFD(mfd);
+                                                        if (pair.Value)
+                                                        { mfdPlan.pageOn = pageName; }
+                                                        else
+                                                        { mfdPlan.pageOff = pageName; }
+                                                        actionSet.addActionPlan(mfdPlan);
+                                                    }
+                                                }
+                                            }
+                                            //We should probably put the page we just configured into the MFD.
+                                            mfd.addPage(pageName, reportable);
+                                        }
+                                    }
+                                    //_debugDisplay.WriteText("      End of Pages loop\n", true);
+                                    if (mfd != null)
+                                    {
+                                        if (mfd.getPageCount() == 0)
+                                        {
+                                            blockWarningLogger($" specified the use of MFD '{mfd.programName}' " +
+                                                "but did not provide readable page configuration for that MFD.");
+                                        }
+                                        else
+                                        {
+
+                                            evalMFDs.Add(mfd.programName, mfd);
+                                            reportable = mfd;
+                                            //Now that we have a MFD, we should see if we previously
+                                            //had this MFD. And what it was doing.
+                                            mfd.trySetPageByName(_iniRead.Get("MFDs", mfd.programName).ToString());
+                                        }
+                                    }
+                                    //At long last, we can commit this page to our reportable listing
+                                    //If we got one.
+                                    if (reportable != null)
+                                    { evalReports.Add(reportable); }
+                                }
+                            }
+                        }
+
+                        //Lighting Blocks might be configured as Indicators
+                        //_debugDisplay.WriteText("    Light handler\n", true);
+                        if (block is IMyLightingBlock)
+                        {
+                            //We'll hold off on setting the 'handled' flag for now, so that we can 
+                            //complain with greater precision in the future.
+                            //From lights, we read:
+                            //IndicatorElement: The Element that this indicator group watches
+                            iniValue = iniReadWrite.Get(tag, "IndicatorElement");
+                            if (!iniValue.IsEmpty)
+                            {
+                                elementName = iniValue.ToString();
+                                IHasElement element = retrieveElement(elementName, blockWarningLogger);
+                                //If we successfully retreived an element...
+                                if (element != null)
+                                {
+                                    //...we first need to see if it's already in the dictionary tracking
+                                    //Indicator light groups.
+                                    if (!evalIndicators.ContainsKey(elementName))
+                                    //If it isn't, we add one.
+                                    { evalIndicators.Add(elementName, new Indicator(element)); }
+                                    //Once we're sure there's an Indicator group in the dictionary, add 
+                                    //this light to it.
+                                    evalIndicators[elementName].addLight((IMyLightingBlock)block);
+                                }
+                            }
+                            //If we can't find the Element key, and this block hasn't been handled, complain.
+                            //(Perhaps this block has config for an ActionSet or something)
+                            else if (!handled)
+                            {
+                                textLog.addWarning($"Lighting block {block.CustomName} has missing or unreadable " +
+                                    $"IndicatorElement.");
+                            }
+                            //If there's no Element key, but the handled flag is set, fail silently in 
+                            //hope that someone, somewhere, knew what they were doing.
+                            //Also, go ahead and set the 'handled' flag.
+                            handled = _TRUE;
+                        }
+
+                        //If we made it here, but the block hasn't been handled, it's time to complain.
+                        //Previously, this would only occur if a block type couldn't be handled by the 
+                        //script. Now, though, things are a bit more complicated, and this message is a lot
+                        //less useful.
+                        if (!handled)
+                        {
+                            textLog.addWarning($"Block '{block.CustomName}' is missing proper configuration or is a " +
+                                $"block type that cannot be handled by this script.");
+                        }
+                    }
+                }
+                return blocks.Count;
+            }
+
+            internal ActionPart tryGetActionPartFromConfig(IMyTerminalBlock block, string sectionHeader,
+                int index, Action<string> blockAndDiscreteSectionWarningLogger)
+            {
+                //_debugDisplay.WriteText("Entering tryGetPartFromConfig\n", _TRUE);
+                //Check the config for the presence of the target key
+                string propertyKey = $"Action{index}Property";
+                iniValue = iniReadWrite.Get(sectionHeader, propertyKey);
+                ActionPart retreivedPart = null;
+                if (!iniValue.IsEmpty)
+                {
+                    string propertyName = iniValue.ToString("<missing>");
+                    //Before we can move on, we need to figure out what type of value this property 
+                    //contains. Or if there's a property at all.
+                    //bool, StringBuilder, long, float, color
+                    ITerminalProperty propertyDef = block.GetProperty(propertyName);
+                    if (propertyDef == null)
+                    {
+                        blockAndDiscreteSectionWarningLogger($" references the unknown property '{propertyName}' " +
+                            $"as its {propertyKey}.");
+                        retreivedPart = new ActionPart<bool>(propertyName);
+                    }
+                    else
+                    {
+                        string valueOn = $"Action{index}ValueOn";
+                        string valueOff = $"Action{index}ValueOff";
+
+                        Action<string> getValue = (key) =>
+                        { iniValue = iniReadWrite.Get(sectionHeader, key); };
+
+                        if (propertyDef.TypeName.ToLowerInvariant() == "boolean")
+                        {
+                            ActionPart<bool> typedPart = new ActionPart<bool>(propertyName);
+                            bool typedValue;
+                            Action<bool, string> handleValue = (isOn, key) =>
+                            {
+                                getValue(key);
+                                if (!iniValue.IsEmpty && iniValue.TryGetBoolean(out typedValue))
+                                {
+                                    typedPart.setValue(isOn, typedValue);
+                                }
+                            };
+                            //20250902: I'd REALLY like to put this bit after all the type branches
+                            //have run, and I could almost get away with that. Unfortunately, no
+                            //combination of tricks I've tried so far has gotten me to the point
+                            //where that would work. So it just goes into each branch.
+                            handleValue(_TRUE, valueOn);
+                            handleValue(_FALSE, valueOff);
+                            retreivedPart = typedPart;
+                        }
+                        else if (propertyDef.TypeName.ToLowerInvariant() == "int64")
+                        {
+                            ActionPart<long> typedPart = new ActionPart<long>(propertyName);
+                            long typedValue;
+                            Action<bool, string> handleValue = (isOn, key) =>
+                            {
+                                getValue(key);
+                                if (!iniValue.IsEmpty && iniValue.TryGetInt64(out typedValue))
+                                {
+                                    typedPart.setValue(isOn, typedValue);
+                                }
+                            };
+                            handleValue(_TRUE, valueOn);
+                            handleValue(_FALSE, valueOff);
+                            retreivedPart = typedPart;
+                        }
+                        else if (propertyDef.TypeName.ToLowerInvariant() == "single")
+                        {
+                            ActionPart<float> typedPart = new ActionPart<float>(propertyName);
+                            float typedValue;
+                            Action<bool, string> handleValue = (isOn, key) =>
+                            {
+                                getValue(key);
+                                if (!iniValue.IsEmpty && iniValue.TryGetSingle(out typedValue))
+                                {
+                                    typedPart.setValue(isOn, typedValue);
+                                }
+                            };
+                            handleValue(_TRUE, valueOn);
+                            handleValue(_FALSE, valueOff);
+                            retreivedPart = typedPart;
+                        }
+                        else if (propertyDef.TypeName.ToLowerInvariant() == "color")
+                        {
+                            //Colors are a bit different
+                            ActionPart<Color> typedPart = new ActionPart<Color>(propertyName);
+                            Color typedValue;
+                            if (colorPalette.tryGetColorFromConfig(blockAndDiscreteSectionWarningLogger, iniReadWrite,
+                                sectionHeader, valueOn, out typedValue))
+                            {
+                                typedPart.setValue(_TRUE, typedValue);
+                            }
+                            if (colorPalette.tryGetColorFromConfig(blockAndDiscreteSectionWarningLogger, iniReadWrite,
+                                sectionHeader, valueOff, out typedValue))
+                            {
+                                typedPart.setValue(_FALSE, typedValue);
+                            }
+
+                            retreivedPart = typedPart;
+                        }
+                        else if (propertyDef.TypeName.ToLowerInvariant() == "stringbuilder")
+                        {
+                            //Strings are even more different than colors. 
+                            ActionPartString stringPart = new ActionPartString(propertyName, sb);
+                            string stringValue;
+                            Action<bool, string> handleValue = (isOn, key) =>
+                            {
+                                getValue(key);
+                                if (!iniValue.IsEmpty && iniValue.TryGetString(out stringValue))
+                                { stringPart.setValue(isOn, stringValue); }
+                            };
+                            handleValue(_TRUE, valueOn);
+                            handleValue(_FALSE, valueOff);
+                            retreivedPart = stringPart;
+                        }
+                        else
+                        {
+                            //We're throwing an error here, so we can't use one of the loggers.
+                            textLog.addError($"Block '{block.CustomName}', discrete section '{sectionHeader}', " +
+                                $"references the property '{propertyName}' which uses the non-standard " +
+                                $"type {propertyDef.TypeName}. Report this to the scripter, as the script " +
+                                $"will need to be altered to handle this.");
+                            retreivedPart = new ActionPart<bool>(propertyName);
+                        }
+                        //The last step is to make sure that we got a value /somewhere/
+                        if (!retreivedPart.isHealthy() && propertyDef != null)
+                        {
+                            blockAndDiscreteSectionWarningLogger($" does not specify a working Action{index}ValueOn " +
+                                $"or Action{index}ValueOff for the property '{propertyName}'. If one was " +
+                                $"specified, make sure that it matches the type '{propertyDef.TypeName}.'");
+                        }
+                    }
+                    //At this point, we either have a functional ActionPart, or a story to tell. Time to
+                    //head home.
+                    return retreivedPart;
+                }
+                else
+                //If we didn't find an ActionProperty at this index, assume that we've reached the end
+                //of the list and return our existing null ActionPart
+                { return retreivedPart; }
+            }
+            
+            //I could probably inline this.
+            //But I'm not gonna.
+            //NOTE: This doesn't actually need to be static. I'm doing that now for backwards compatability 
+            //with the existing Evaluate code (Specifically, so I can comment out the original version 
+            //of this now, while I'm thinking about it).
+            public static Dictionary<string, Action<IMyTerminalBlock>> compileActions()
+            {
+                //Dictionary<string, Action<IMyTerminalBlock>> actions = new Dictionary<string, Action<IMyTerminalBlock>>();
+                Dictionary<string, Action<IMyTerminalBlock>> actions =
+                    new Dictionary<string, Action<IMyTerminalBlock>>(StringComparer.OrdinalIgnoreCase);
+                //A giant list of raw strings. It was the tallest nail when the hammer of character count
+                //optimization came around.
+                string blockName;
+                string commandName = "Enable";
+                string positive = "Positive";
+                string negative = "Negative";
+
+                //Functional Blocks==================
+                //EnableOn
+                actions.Add($"{commandName}On", b => ((IMyFunctionalBlock)b).Enabled = _TRUE);
+                //EnableOff
+                actions.Add($"{commandName}Off", b => ((IMyFunctionalBlock)b).Enabled = _FALSE);
+
+                //Battery Blocks=====================
+                blockName = "Battery";
+                commandName = "charge";
+                //BatteryAuto
+                actions.Add($"{blockName}Auto", b => ((IMyBatteryBlock)b).ChargeMode = ChargeMode.Auto);
+                //BatteryRecharge
+                actions.Add($"{blockName}Re{commandName}", b => ((IMyBatteryBlock)b).ChargeMode = ChargeMode.Recharge);
+                //BatteryDischarge
+                actions.Add($"{blockName}Dis{commandName}", b => ((IMyBatteryBlock)b).ChargeMode = ChargeMode.Discharge);
+
+                //Cameras
+                //20240912: Doesn't actually seem to work. Not sure why. Leaving it in for now,
+                //but not documenting its existence.
+                //20250519: Disabled for character count.
+                //actions.Add("CameraRaycastEnable", b => ((IMyCameraBlock)b).EnableRaycast = true);
+                //actions.Add("CameraRaycastDisable", b => ((IMyCameraBlock)b).EnableRaycast = false);
+
+                //Connectors=========================
+                blockName = "Connector";
+                //ConnectorLock
+                actions.Add($"{blockName}Lock", b => ((IMyShipConnector)b).Connect());
+                //ConnectorUnlock
+                actions.Add($"{blockName}Unlock", b => ((IMyShipConnector)b).Disconnect());
+
+                //Doors==============================
+                blockName = "Door";
+                //DoorOpen
+                actions.Add($"{blockName}Open", b => ((IMyDoor)b).OpenDoor());
+                //DoorClose
+                actions.Add($"{blockName}Close", b => ((IMyDoor)b).CloseDoor());
+
+                //GasTanks===========================
+                blockName = "Tank";
+                commandName = "Stockpile";
+                //TankStockpileOn
+                actions.Add($"{blockName}{commandName}On", b => ((IMyGasTank)b).Stockpile = _TRUE);
+                //TankStockpileOff
+                actions.Add($"{blockName}{commandName}Off", b => ((IMyGasTank)b).Stockpile = _FALSE);
+
+                //Gyros==============================
+                blockName = "Gyro";
+                string stabilize = "Stabilize";
+                //Gyro overides are set in RPM, but we can't say for sure what the max RPM of a given 
+                //block may be. So instead, we use arbitrarily high numbers and let the block sort it out.
+                //GyroOverrideOn
+                commandName = "Override";
+                //GyroOverrideOn
+                actions.Add($"{blockName}{commandName}On", b => ((IMyGyro)b).GyroOverride = _TRUE);
+                //GyroOverrideOff
+                actions.Add($"{blockName}{commandName}Off", b => ((IMyGyro)b).GyroOverride = _FALSE);
+                //GyroYawPositive
+                actions.Add($"{blockName}Yaw{positive}", b => ((IMyGyro)b).Yaw = 9000);
+                //GyroYawStabilize
+                actions.Add($"{blockName}Yaw{stabilize}", b => ((IMyGyro)b).Yaw = 0);
+                //GyroYawNegative
+                actions.Add($"{blockName}Yaw{negative}", b => ((IMyGyro)b).Yaw = -9000);
+                //Yes, I'm assigning PitchPositive to be -9000. Yes, that makes no sense. No, I don't 
+                //know why it has to be this way to make it work correctly.
+                //GyroPitchPositive
+                commandName = "Pitch";
+                actions.Add($"{blockName}{commandName}{positive}", b => ((IMyGyro)b).Pitch = -9000);
+                //GyroPitchStabilize
+                actions.Add($"{blockName}{commandName}{stabilize}", b => ((IMyGyro)b).Pitch = 0);
+                //GyroPitchNegative
+                actions.Add($"{blockName}{commandName}{negative}", b => ((IMyGyro)b).Pitch = 9000);
+                //GyroRollPositive
+                commandName = "Roll";
+                actions.Add($"{blockName}{commandName}{positive}", b => ((IMyGyro)b).Roll = 9000);
+                //GyroRollStabilize
+                actions.Add($"{blockName}{commandName}{stabilize}", b => ((IMyGyro)b).Roll = 0);
+                //GyroRollNegative
+                actions.Add($"{blockName}{commandName}{negative}", b => ((IMyGyro)b).Roll = -9000);
+
+                //LandingGear========================
+                blockName = "Gear";
+                commandName = "AutoLock";
+                //GearAutoLockOn
+                actions.Add($"{blockName}{commandName}On", b => ((IMyLandingGear)b).AutoLock = _TRUE);
+                //GearAutoLockOff
+                actions.Add($"{blockName}{commandName}Off", b => ((IMyLandingGear)b).AutoLock = _FALSE);
+                //GearLock
+                actions.Add($"{blockName}Lock", b => ((IMyLandingGear)b).Lock());
+                //GearUnlock
+                actions.Add($"{blockName}Unlock", b => ((IMyLandingGear)b).Unlock());
+
+                //Jump Drives========================
+                blockName = "JumpDrive";
+                commandName = "Recharge";
+                //JumpDriveRechargeOn
+                actions.Add($"{blockName}{commandName}On", b => ((IMyJumpDrive)b).Recharge = _TRUE);
+                //JumpDriveRechargeOff
+                actions.Add($"{blockName}{commandName}Off", b => ((IMyJumpDrive)b).Recharge = _FALSE);
+
+                //Parachutes=========================
+                blockName = "Parachute";
+                //ParachuteOpen
+                actions.Add($"{blockName}Open", b => ((IMyParachute)b).OpenDoor());
+                //ParachuteClose
+                actions.Add($"{blockName}Close", b => ((IMyParachute)b).CloseDoor());
+                commandName = "AutoDeploy";
+                //ParachuteAutoDeployOn
+                actions.Add($"{blockName}{commandName}On", b => ((IMyParachute)b).AutoDeploy = _TRUE);
+                //ParachuteAutoDeployOff
+                actions.Add($"{blockName}{commandName}Off", b => ((IMyParachute)b).AutoDeploy = _FALSE);
+
+                //Pistons============================
+                blockName = "Piston";
+                //PistonExtend
+                actions.Add($"{blockName}Extend", b => ((IMyPistonBase)b).Extend());
+                //PistonRetract
+                actions.Add($"{blockName}Retract", b => ((IMyPistonBase)b).Retract());
+
+                //Rotors=============================
+                /*
+                //RotorLock
+                actions.Add($"{blockName}Lock", b => ((IMyMotorAdvancedStator)b).RotorLock = true);
+                //RotorUnlock
+                actions.Add($"{blockName}Unlock", b => ((IMyMotorAdvancedStator)b).RotorLock = false);
+                //RotorReverse
+                actions.Add($"{blockName}Reverse", b => ((IMyMotorAdvancedStator)b).TargetVelocityRPM =
+                    ((IMyMotorAdvancedStator)b).TargetVelocityRPM * -1);
+                //RotorPositive
+                actions.Add($"{blockName}{positive}", b => ((IMyMotorAdvancedStator)b).TargetVelocityRPM =
+                    Math.Abs(((IMyMotorAdvancedStator)b).TargetVelocityRPM));
+                //RotorNegative
+                actions.Add($"{blockName}{negative}", b => ((IMyMotorAdvancedStator)b).TargetVelocityRPM =
+                    Math.Abs(((IMyMotorAdvancedStator)b).TargetVelocityRPM) * -1);*/
+                blockName = "Rotor";
+                //RotorLock
+                actions.Add($"{blockName}Lock", b => ((IMyMotorStator)b).RotorLock = _TRUE);
+                //RotorUnlock
+                actions.Add($"{blockName}Unlock", b => ((IMyMotorStator)b).RotorLock = _FALSE);
+                //RotorReverse
+                actions.Add($"{blockName}Reverse", b => ((IMyMotorStator)b).TargetVelocityRPM =
+                    ((IMyMotorStator)b).TargetVelocityRPM * -1);
+                //RotorPositive
+                actions.Add($"{blockName}{positive}", b => ((IMyMotorStator)b).TargetVelocityRPM =
+                    Math.Abs(((IMyMotorStator)b).TargetVelocityRPM));
+                //RotorNegative
+                actions.Add($"{blockName}{negative}", b => ((IMyMotorStator)b).TargetVelocityRPM =
+                    Math.Abs(((IMyMotorStator)b).TargetVelocityRPM) * -1);
+
+                //Sorters============================
+                blockName = "Sorter";
+                commandName = "Drain";
+                //SorterDrainOn
+                actions.Add($"{blockName}{commandName}On", b => ((IMyConveyorSorter)b).DrainAll = _TRUE);
+                //SorterDrainOff
+                actions.Add($"{blockName}{commandName}Off", b => ((IMyConveyorSorter)b).DrainAll = _FALSE);
+
+                //Sound Block========================
+                blockName = "Sound";
+                //SoundPlay
+                actions.Add($"{blockName}Play", b => ((IMySoundBlock)b).Play());
+                //SoundStop
+                actions.Add($"{blockName}Stop", b => ((IMySoundBlock)b).Stop());
+
+                //Thrusters==========================
+                blockName = "Thruster";
+                commandName = "Override";
+                //ThrusterOverrideMax
+                actions.Add($"{blockName}{commandName}Max", b => ((IMyThrust)b).ThrustOverridePercentage = 1);
+                //ThrusterOverrideOff
+                actions.Add($"{blockName}{commandName}Off", b => ((IMyThrust)b).ThrustOverridePercentage = 0);
+
+                //Timers=============================
+                blockName = "Timer";
+                //TimerTrigger
+                actions.Add($"{blockName}Trigger", b => ((IMyTimerBlock)b).Trigger());
+                //TimerStart
+                actions.Add($"{blockName}Start", b => ((IMyTimerBlock)b).StartCountdown());
+                //TimerStop
+                actions.Add($"{blockName}Stop", b => ((IMyTimerBlock)b).StopCountdown());
+
+                //Turrets and Custom Controllers=====
+                blockName = "Turret";
+                string controller = "Controller";
+                string target = "Target";
+                commandName = "Meteors";
+                //TurretTargetMeteorsOn
+                actions.Add($"{blockName}{target}{commandName}On", b => ((IMyLargeTurretBase)b).TargetMeteors = _TRUE);
+                //TurretTargetMeteorsOff
+                actions.Add($"{blockName}{target}{commandName}Off", b => ((IMyLargeTurretBase)b).TargetMeteors = _FALSE);
+                //ControllerTargetMeteorsOn
+                actions.Add($"{controller}{target}{commandName}On", b => ((IMyTurretControlBlock)b).TargetMeteors = _TRUE);
+                //ControllerTargetMeteorsOff
+                actions.Add($"{controller}{target}{commandName}Off", b => ((IMyTurretControlBlock)b).TargetMeteors = _FALSE);
+
+                commandName = "Missiles";
+                //TurretTargetMissilesOn
+                actions.Add($"{blockName}{target}{commandName}On", b => ((IMyLargeTurretBase)b).TargetMissiles = _TRUE);
+                //TurretTargetMissilesOff
+                actions.Add($"{blockName}{target}{commandName}Off", b => ((IMyLargeTurretBase)b).TargetMissiles = _FALSE);
+                //ControllerTargetMissilesOn
+                actions.Add($"{controller}{target}{commandName}On", b => ((IMyTurretControlBlock)b).TargetMissiles = _TRUE);
+                //ControllerTargetMissilesOff
+                actions.Add($"{controller}{target}{commandName}Off", b => ((IMyTurretControlBlock)b).TargetMissiles = _FALSE);
+
+                commandName = "SmallGrids";
+                //TurretTargetSmallGridsOn
+                actions.Add($"{blockName}{target}{commandName}On", b => ((IMyLargeTurretBase)b).TargetSmallGrids = _TRUE);
+                //TurretTargetSmallGridsOff
+                actions.Add($"{blockName}{target}{commandName}Off", b => ((IMyLargeTurretBase)b).TargetSmallGrids = _FALSE);
+                //ControllerTargetSmallGridsOn
+                actions.Add($"{controller}{target}{commandName}On", b => ((IMyTurretControlBlock)b).TargetSmallGrids = _TRUE);
+                //ControllerTargetSmallGridsOff
+                actions.Add($"{controller}{target}{commandName}Off", b => ((IMyTurretControlBlock)b).TargetSmallGrids = _FALSE);
+
+                commandName = "LargeGrids";
+                //TurretTargetLargeGridsOn
+                actions.Add($"{blockName}{target}{commandName}On", b => ((IMyLargeTurretBase)b).TargetLargeGrids = _TRUE);
+                //TurretTargetLargeGridsOff
+                actions.Add($"{blockName}{target}{commandName}Off", b => ((IMyLargeTurretBase)b).TargetLargeGrids = _FALSE);
+                //ControllerTargetLargeGridsOn
+                actions.Add($"{controller}{target}{commandName}On", b => ((IMyTurretControlBlock)b).TargetLargeGrids = _TRUE);
+                //ControllerTargetLargeGridsOff
+                actions.Add($"{controller}{target}{commandName}Off", b => ((IMyTurretControlBlock)b).TargetLargeGrids = _FALSE);
+
+                commandName = "Characters";
+                //TurretTargetCharactersOn
+                actions.Add($"{blockName}{target}{commandName}On", b => ((IMyLargeTurretBase)b).TargetCharacters = _TRUE);
+                //TurretTargetCharactersOff
+                actions.Add($"{blockName}{target}{commandName}Off", b => ((IMyLargeTurretBase)b).TargetCharacters = _FALSE);
+                //ControllerTargetCharactersOn
+                actions.Add($"{controller}{target}{commandName}On", b => ((IMyTurretControlBlock)b).TargetCharacters = _TRUE);
+                //ControllerTargetCharactersOff
+                actions.Add($"{controller}{target}{commandName}Off", b => ((IMyTurretControlBlock)b).TargetCharacters = _FALSE);
+
+                commandName = "Stations";
+                //TurretTargetStationsOn
+                actions.Add($"{blockName}{target}{commandName}On", b => ((IMyLargeTurretBase)b).TargetStations = _TRUE);
+                //TurretTargetStationsOff
+                actions.Add($"{blockName}{target}{commandName}Off", b => ((IMyLargeTurretBase)b).TargetStations = _FALSE);
+                //ControllerTargetStationsOn
+                actions.Add($"{controller}{target}{commandName}On", b => ((IMyTurretControlBlock)b).TargetStations = _TRUE);
+                //ControllerTargetStationsOff
+                actions.Add($"{controller}{target}{commandName}Off", b => ((IMyTurretControlBlock)b).TargetStations = _FALSE);
+
+                commandName = "Neutrals";
+                //TurretTargetNeutralsOn
+                actions.Add($"{blockName}{target}{commandName}On", b => ((IMyLargeTurretBase)b).TargetNeutrals = _TRUE);
+                //TurretTargetNeutralsOff
+                actions.Add($"{blockName}{target}{commandName}Off", b => ((IMyLargeTurretBase)b).TargetNeutrals = _FALSE);
+                //ControllerTargetNeutralsOn
+                actions.Add($"{controller}{target}{commandName}On", b => ((IMyTurretControlBlock)b).TargetNeutrals = _TRUE);
+                //ControllerTargetNeutralsOff
+                actions.Add($"{controller}{target}{commandName}Off", b => ((IMyTurretControlBlock)b).TargetNeutrals = _FALSE);
+
+                commandName = "Enemies";
+                //TurretTargetEnemiesOn
+                actions.Add($"{blockName}{target}{commandName}On", b => ((IMyLargeTurretBase)b).TargetEnemies = _TRUE);
+                //TurretTargetEnemiesOff
+                actions.Add($"{blockName}{target}{commandName}Off", b => ((IMyLargeTurretBase)b).TargetEnemies = _FALSE);
+                //For some reason, Turret Controller blocks don't have a setter for TargetEnemies. So 
+                //instead, we have to use terminal actions.
+                //TurretTargetEnemiesOn
+                actions.Add($"{controller}{target}{commandName}On", b => b.SetValue("TargetEnemies", _TRUE));
+                //TurretTargetEnemiesOff
+                actions.Add($"{controller}{target}{commandName}Off", b => b.SetValue("TargetEnemies", _FALSE));
+                /* This never worked, and despite some fairly rigorous testing (Where this worked in isolation),
+                 * I couldn't figure out why. It's something in the lambda expression, possibly the interpolated
+                 * string. (20250519)
+                //ControllerTargetEnemiesOn
+                actions.Add($"{controller}{target}{commandName}On", b => b.SetValue($"{target}{commandName}", true));
+                //ControllerTargetEnemiesOff
+                actions.Add($"{controller}{target}{commandName}Off", b => b.SetValue($"{target}{commandName}", false));
+                */
+
+                string subsystem = "Subsystem";
+                commandName = "Default";
+                //TurretSubsystemDefault
+                actions.Add($"{blockName}{subsystem}{commandName}", b => ((IMyLargeTurretBase)b).SetTargetingGroup(""));
+                //ControllerSubsystemDefault
+                actions.Add($"{controller}{subsystem}{commandName}", b => ((IMyTurretControlBlock)b).SetTargetingGroup(""));
+
+                commandName = "Weapons";
+                //TurretSubsystemWeapons
+                actions.Add($"{blockName}{subsystem}{commandName}", b => ((IMyLargeTurretBase)b).SetTargetingGroup(commandName));
+                //ControllerSubsystemWeapons
+                actions.Add($"{controller}{subsystem}{commandName}", b => ((IMyTurretControlBlock)b).SetTargetingGroup(commandName));
+
+                commandName = "Propulsion";
+                //TurretSubsystemPropulsion
+                actions.Add($"{blockName}{subsystem}{commandName}", b => ((IMyLargeTurretBase)b).SetTargetingGroup(commandName));
+                //ControllerSubsystemPropulsion
+                actions.Add($"{controller}{subsystem}{commandName}", b => ((IMyTurretControlBlock)b).SetTargetingGroup(commandName));
+
+                commandName = "PowerSystems";
+                //TurretSubsystemPowerSystems
+                actions.Add($"{blockName}{subsystem}{commandName}", b => ((IMyLargeTurretBase)b).SetTargetingGroup(commandName));
+                //ControllerSubsystemPowerSystems
+                actions.Add($"{controller}{subsystem}{commandName}", b => ((IMyTurretControlBlock)b).SetTargetingGroup(commandName));
+
+                //Vents==============================
+                blockName = "Vent";
+                commandName = "pressurize";
+                //VentPressurize
+                actions.Add($"{blockName}{commandName}", b => ((IMyAirVent)b).Depressurize = _FALSE);
+                //VentDepressurize
+                actions.Add($"{blockName}De{commandName}", b => ((IMyAirVent)b).Depressurize = _TRUE);
+
+                //Warheads===========================
+                blockName = "Warhead";
+                //WarheadArm
+                actions.Add($"{blockName}Arm", b => ((IMyWarhead)b).IsArmed = _TRUE);
+                //WarheadDisarm
+                actions.Add($"{blockName}Disarm", b => ((IMyWarhead)b).IsArmed = _FALSE);
+                commandName = "Countdown";
+                //WarheadCountdownStart
+                actions.Add($"{blockName}{commandName}Start", b => ((IMyWarhead)b).StartCountdown());
+                //WarheadCountdownStop
+                actions.Add($"{blockName}{commandName}Stop", b => ((IMyWarhead)b).StopCountdown());
+                //WarheadDetonate
+                actions.Add($"{blockName}Detonate", b => ((IMyWarhead)b).Detonate());
+
+                //Weapons============================
+                actions.Add("WeaponFireOnce", b => ((IMyUserControllableGun)b).ShootOnce());
+
+                //Wheels=============================
+                blockName = "Suspension";
+                commandName = "Height";
+                //SuspensionHeightPositive
+                actions.Add($"{blockName}{commandName}{positive}", b => ((IMyMotorSuspension)b).Height = 9000);
+                //SuspensionHeightNegative
+                actions.Add($"{blockName}{commandName}{negative}", b => ((IMyMotorSuspension)b).Height = -9000);
+                //SuspensionHeightZero
+                actions.Add($"{blockName}{commandName}Zero", b => ((IMyMotorSuspension)b).Height = 0);
+                commandName = "Propulsion";
+                //SuspensionPropulsionPositive
+                actions.Add($"{blockName}{commandName}{positive}", b => ((IMyMotorSuspension)b).PropulsionOverride = 1);
+                //SuspensionPropulsionNegative
+                actions.Add($"{blockName}{commandName}{negative}", b => ((IMyMotorSuspension)b).PropulsionOverride = -1);
+                //SuspensionPropulsionZero
+                actions.Add($"{blockName}{commandName}Zero", b => ((IMyMotorSuspension)b).PropulsionOverride = 0);
+                //MergeBlock?
+                return actions;
+            }
+
+            /* Parses a State List in the format 'Batteries: On, Thrusters: On' etc
+             * string stateList: The string containing the state list to be parsed
+             * string troubleID: How the method will describe where the stateList came from in error 
+             *   messages 
+             * LimitedMessageLog textLog: The message log we'll be sending our errors to.
+             * List<KeyValuePair> parsedData: A reference to a list of KeyValuePairs, containing a string
+             *   and a boolean. This reference will contain the data this method has parsed.
+            */
+            //Right now, State Lists are only used in EvaluateDeclarations, and for MFDs in EvaluateGrid.
+            //But it's a handy format, so this method has been made static just in case I later decide 
+            //I need it somewhere else.
+            internal static void parseStateList(string stateList, List<KeyValuePair<string, bool>> parsedData, 
+                Action<string> troubleLogger, string additionalErrorLocationInfo = "")
+            {
+                string target = "";
+                bool state = _FALSE;
+                bool badState;
+                parsedData.Clear();
+                string[] pairs = stateList.Split(',').Select(p => p.Trim()).ToArray();
+
+                foreach (string pair in pairs)
+                {
+
+                    badState = _FALSE;
+                    string[] parts = pair.Split(':').Select(p => p.Trim()).ToArray();
+                    //The first part of the pair is the identifier.
+                    target = parts[0];
+                    if (parts.Length < 2)
+                    {
+                        badState = _TRUE;
+                        troubleLogger($"{additionalErrorLocationInfo} does not provide a state for " +
+                            $"the component '{target}'. Valid states are 'on' and 'off'.");
+                    }
+                    //The second part is the desired state, but it's in the form of on/off
+                    else if (parts[1].ToLowerInvariant() == "on")
+                    { state = _TRUE; }
+                    else if (parts[1].ToLowerInvariant() == "off")
+                    { state = _FALSE; }
+                    else
+                    {
+                        badState = _TRUE;
+                        troubleLogger($"{additionalErrorLocationInfo} attempts to set '{target}' to the invalid state " +
+                            $"'{parts[1]}'. Valid states are 'on' and 'off'.");
+                    }
+
+                    if (!badState)
+                    { parsedData.Add(new KeyValuePair<string, bool>(target, state)); }
+                }
+            }
+            
+            //Removes all declaration sections from the PB and returns what's left.
+            //Assumes ini is loaded with a parse of the PB's config (Which will be ruined when 
+            //  this method completes)
+            public static string stripDeclarations(MyIni ini)
+            {
+                List<string> sections = new List<string>();
+                //Does this break encapsulation? Or is it fine because we're dealing with consts?
+                //Question is kinda moot, Ima do it anyway.
+                string declarationPrefix = $"{_SCRIPT_PREFIX}.{_DECLARATION_PREFIX}";
+
+                ini.GetSections(sections);
+                foreach (string section in sections)
+                {
+                    if (section.Contains(declarationPrefix))
+                    { ini.DeleteSection(section); }
+                }
+
+                return ini.ToString();
             }
         }
 
@@ -4867,7 +7374,7 @@ namespace IngameScript
         //Removes all declaration sections from the PB and returns what's left.
         //Assumes _iniReadWrite is loaded with a parse of the PB's config (Which will be ruined when 
         //  this method completes)
-        public string stripDeclarations()
+        /*public string stripDeclarations()
         {
             List<string> sections = new List<string>();
             string declarationPrefix = $"{_SCRIPT_PREFIX}.{_DECLARATION_PREFIX}";
@@ -4880,7 +7387,7 @@ namespace IngameScript
             }
 
             return _iniReadWrite.ToString();
-        }
+        }*/
 
         //20240426: Orphaned, but looks useful
         /*
@@ -4915,7 +7422,7 @@ namespace IngameScript
             }
             return outcome;
         } */
-
+        /*
         public Dictionary<string, Action<IMyTerminalBlock>> compileActions()
         {
             //Dictionary<string, Action<IMyTerminalBlock>> actions = new Dictionary<string, Action<IMyTerminalBlock>>();
@@ -5060,7 +7567,7 @@ namespace IngameScript
                 Math.Abs(((IMyMotorAdvancedStator)b).TargetVelocityRPM));
             //RotorNegative
             actions.Add($"{blockName}{negative}", b => ((IMyMotorAdvancedStator)b).TargetVelocityRPM =
-                Math.Abs(((IMyMotorAdvancedStator)b).TargetVelocityRPM) * -1);*/
+                Math.Abs(((IMyMotorAdvancedStator)b).TargetVelocityRPM) * -1);
             blockName = "Rotor";
             //RotorLock
             actions.Add($"{blockName}Lock", b => ((IMyMotorStator)b).RotorLock = _TRUE);
@@ -5200,7 +7707,6 @@ namespace IngameScript
             actions.Add($"{controller}{target}{commandName}On", b => b.SetValue($"{target}{commandName}", true));
             //ControllerTargetEnemiesOff
             actions.Add($"{controller}{target}{commandName}Off", b => b.SetValue($"{target}{commandName}", false));
-            */
 
             string subsystem = "Subsystem";
             commandName = "Default";
@@ -5270,7 +7776,7 @@ namespace IngameScript
             actions.Add($"{blockName}{commandName}Zero", b => ((IMyMotorSuspension)b).PropulsionOverride = 0);
             //MergeBlock?
             return actions;
-        }
+        }*/
 
         internal class PaletteManager
         {
@@ -5384,7 +7890,7 @@ namespace IngameScript
             public IColorCoder getCoderDirect(string name)
             { return colorPalette[name]; }
         }
-
+        /*
         //Checks the specified ini section for the specified key. If the key is found, returns true.
         //If the key is absent, generate a new key with a defualt value and potentially log that 
         //this happened.
@@ -5410,32 +7916,7 @@ namespace IngameScript
                 return _FALSE;
             }
             return _TRUE;
-        }
-
-        private bool isElementNameInUse(HashSet<string> elementNames, string name,
-            string declarationSection, LimitedMessageLog textLog)
-        {
-            //There are two scenarios under which a name is in use. The first is if the user is 
-            //trying to use our single solitary reserved word. I mean, really user?
-            if (name.ToLowerInvariant() == "blank")
-            {
-                textLog.addError($"{declarationSection} tried to use the Element name '{name}', " +
-                    "which is reserved by the script to indicate portions of a Report that should " +
-                    "be left empty. Please choose a different name.");
-                return _TRUE;
-            }
-            //The second and more obvious scenario is if the name is already in use.
-            else if (elementNames.Contains(name))
-            {
-                textLog.addError($"{declarationSection} tried to use the Element name '{name}', " +
-                    $"which has already been claimed. All Element providers (Tally, ActionSet, " +
-                    $"Trigger, Raycaster) must have their own, unique names.");
-                return _TRUE;
-            }
-            //Barring those two cases, we're fine, and the element name is not in use.
-            else
-            { return _FALSE; }
-        }
+        }*/
 
         /* Parses a State List in the format 'Batteries: On, Thrusters: On' etc
          * string stateList: The string containing the state list to be parsed
@@ -5502,6 +7983,7 @@ namespace IngameScript
             return actionHandlers;
         }
 
+        //CULL
         public Action<IMyTerminalBlock> retrieveActionHandler(string actionName, Dictionary<string, Action<IMyTerminalBlock>> actions,
             LimitedMessageLog textLog, IMyTerminalBlock block, string discreteTag, string keyName)
         {
@@ -5598,6 +8080,8 @@ namespace IngameScript
                     //TERRIBLE TERRIBLE HACK
                     //Remove this as soon as possible, plus the bit at the bottom of the method it
                     //references.
+                    //20250830: I never set a retrievedPart here. Doesn't that mean that this will
+                    //return null, which in turn tells the main method to close the loop?
                     goto PretendThereWasNoPart;
                 }
                 else if (propertyDef.TypeName.ToLowerInvariant() == "int64")
@@ -6904,8 +9388,12 @@ namespace IngameScript
         public abstract class ActionPart
         {
             public abstract bool isHealthy();
-            public abstract Type getPropertyType();
             public abstract void takeAction(IMyTerminalBlock block, bool isOnAction);
+            //Debug methods
+            /*
+            public abstract Type getPropertyType();
+            public abstract string getAllTypes();
+            */
         }
 
         //Stores the type, propertyID, and values of an individual ActionPart, and allows SetValue to
@@ -6927,6 +9415,20 @@ namespace IngameScript
                 hasOff = _FALSE;
             }
 
+            public void setValue(bool isOn, T value)
+            {
+                if (isOn)
+                {
+                    valueOn = value;
+                    hasOn = _TRUE;
+                }
+                else
+                {
+                    valueOff = value;
+                    hasOff = _TRUE;
+                }
+            }
+            /*
             public void setValueOn(T value)
             {
                 valueOn = value;
@@ -6938,12 +9440,9 @@ namespace IngameScript
                 valueOff = value;
                 hasOff = _TRUE;
             }
-
+            */
             public override bool isHealthy()
             { return hasOn || hasOff; }
-
-            public override Type getPropertyType()
-            { return typeof(T); }
 
             public override void takeAction(IMyTerminalBlock block, bool isOnAction)
             {
@@ -6952,6 +9451,76 @@ namespace IngameScript
                 else if (!isOnAction && hasOff)
                 { block.SetValue<T>(propertyID, valueOff); }
             }
+
+            /*
+            //Debug method. Not used in code.
+            public override Type getPropertyType()
+            { return typeof(T); }
+
+            public override string getAllTypes()
+            {
+                return $"T: {typeof(T)}, ValueOn: {valueOn?.GetType().ToString() ?? "<null>"}, " +
+                    $"ValueOff: {valueOff?.GetType().ToString() ?? "<null>"}";
+            }
+            */
+        }
+        
+        //An alternative version of ActionPart specifically for working with strings.
+        public class ActionPartString : ActionPart
+        {
+            //A reference to the global StringBuilder.
+            StringBuilder sb;
+            //The property this ActionPart will target
+            string propertyID;
+            //The strings this ActionPart will use for on and off actions.
+            private string valueOn, valueOff;
+            //Strings can be nulled, so we'll skip hasOn and hasOff
+            //private bool hasOn, hasOff;
+
+            public ActionPartString(string propertyID, StringBuilder globalSB)
+            {
+                sb = globalSB;
+                this.propertyID = propertyID;
+                valueOn = null;
+                valueOff = null;
+            }
+
+            public void setValue(bool isOn, string value)
+            {
+                if (isOn)
+                { valueOn = value; }
+                else
+                { valueOff = value; }
+            }
+
+            public override bool isHealthy()
+            { return valueOn != null || valueOff != null; }
+
+            public override void takeAction(IMyTerminalBlock block, bool isOnAction)
+            {
+                //20251120: Keen recently replaced a bunch of objects with MemorySafe variants. But 
+                //we still write code with the plain'ole C# objects; the conversion occurs somewhere 
+                //under the hood, possibly when a variable goes out of scope. But when SetValue is 
+                //dealing with strings, it expects a StringBuilder, not a MemorySafeStringBuilder. 
+                //Thus this cast, to ensure that what we're handing to SetValue is in fact a StringBuilder
+                //in the moment we hand it over.
+                //The other solution I managed to get working involved creating new StringBuilders
+                //each moment I needed to set a string value. But that hurt my heart.
+                StringBuilder castSB = (StringBuilder)sb;
+                if (isOnAction && valueOn != null)
+                { block.SetValue(propertyID, castSB.Append(valueOn)); }
+                if (!isOnAction && valueOff != null)
+                { block.SetValue(propertyID, castSB.Append(valueOff)); }
+                sb.Clear();
+            }
+            /*
+            //Debug method. Not used in code.
+            public override Type getPropertyType()
+            { return typeof(string); }
+
+            public override string getAllTypes()
+            { return "Strings all the way down."; }
+            */
         }
 
         //Stores a binary set of MFD pages for a specific MFD
@@ -6985,7 +9554,7 @@ namespace IngameScript
 
             //Determine if this ActionPlan has any actions defined
             public bool hasAction()
-            { return !String.IsNullOrEmpty(pageOn) || !String.IsNullOrEmpty(pageOff); }
+            { return !Hammers.isEmptyString(pageOn) || !Hammers.isEmptyString(pageOff); }
 
             public string getIdentifier()
             { return "Some MFD (Sorry, MFDs are supposed to work)"; }
@@ -7305,7 +9874,7 @@ namespace IngameScript
 
             //Determine if this ActionPlan has any actions defined
             public bool hasAction()
-            { return !String.IsNullOrEmpty(messageOn) || !String.IsNullOrEmpty(messageOff); }
+            { return !Hammers.isEmptyString(messageOn) || !Hammers.isEmptyString(messageOff); }
 
             public string getIdentifier()
             { return $"IGC on channel '{channel}'"; }
@@ -8183,7 +10752,8 @@ namespace IngameScript
             //included or not.
             bool includeRefreshSprite;
 
-            public Report(IMyTextSurface surface, List<IHasElement> elements, string title = "", float fontSize = 1f, string font = "Debug")
+            public Report(IMyTextSurface surface, List<IHasElement> elements, string title = "", float 
+                fontSize = 1f, string font = "Debug")
             {
                 this.surface = surface;
                 //We won't be adding or removing tallies at this point, so we'll just pull the 
@@ -8241,7 +10811,7 @@ namespace IngameScript
                 _sb.Clear();
                 //Assume there's no title
                 float titleHeight = 0;
-                if (!string.IsNullOrEmpty(title))
+                if (!Hammers.isEmptyString(title))
                 {
                     //Figure out how much vertical space the title's text requires.
                     _sb.Append(title);
@@ -8339,7 +10909,7 @@ namespace IngameScript
                         frame.Add(sprite);
                     }
                     //Next comes the title sprite, if available
-                    if (!string.IsNullOrEmpty(title))
+                    if (!Hammers.isEmptyString(title))
                     {
                         sprite = MySprite.CreateText(title, font, surface.ScriptForegroundColor,
                                 fontSize);
@@ -8375,7 +10945,6 @@ namespace IngameScript
             //Prepare this surface for displaying the report.
             public void setProfile()
             {
-                //TESTING PURPOSES
                 surface.ContentType = ContentType.SCRIPT;
                 surface.Script = "";
                 surface.ScriptForegroundColor = foreColor;
@@ -8568,7 +11137,7 @@ namespace IngameScript
             //Will only be set if a number greater than or equal to 0 is passed in.
             int charPerLine;
             //TODO: Come back and figure out why this didn't work.
-            //29249429: Only passing through, but I think the reason was that, if you have a getter 
+            //20240420: Only passing through, but I think the reason was that, if you have a getter 
             //or a setter, they are used for all instances of getting and setting. Including the ones
             //in the getter and setter. In order to make this work, I'd need two variables: a private
             //one that actually holds the data, and the public one that uses getters and setters to
@@ -9390,7 +11959,7 @@ namespace IngameScript
                 { _sb.Append($" {ticWidget[ticWidgetIndex]}"); }
                 _sb.Append("\n");
                 //If we've got a custom scriptTag...
-                if (!String.IsNullOrEmpty(scriptTag))
+                if (!Hammers.isEmptyString(scriptTag))
                 //...tack it on
                 { _sb.Append($"Script Tag: {scriptTag}\n"); }
                 //If scriptUpdateDelay isn't 0...
@@ -9476,6 +12045,12 @@ namespace IngameScript
                 meter = _sb.ToString();
                 _sb.Clear();
             }
+        }
+
+        public class Hammers
+        {
+            public static bool isEmptyString(string input)
+            { return String.IsNullOrEmpty(input); }
         }
     }
 }

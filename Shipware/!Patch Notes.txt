@@ -217,15 +217,6 @@ v 0.8021 (Count 99671)
  -Gas tallies now recognize the Prototech Fusion Reactor.
 
 v 0.8022 (Count 99135)
- >Probably release this with Core Systems. But update the Exclusion List with any new blocks before I do
- >Next commit notes (Only commit Shipware Live and Minified .8022):
-   Replaced all bools with references to global _TRUE and _FALSE variables to save on minified character count.
-   Commented out ActionPart.getProperty type, which wasn't actually used but is handy for debugging.
-   Created bespoke ActionPartString for use with string-based TerminalActions, referencing the global _sb
-   Re-enabled string-based Terminal Actions
-   EventLog.toString(): Now clears the global _sb when it has completed.
-   EvaluateGrid, ActionSet handler: Added a null check to the discrete section reader, for situations where no expected config is found.
-
  -Re-enabled handling for string-based terminal actions due to a fix in base game code. Thank you, Keen!
  -Fixed an exception ocurring when the discrete section of an ActionSet contained no keys for 
   configuring that action.
@@ -242,16 +233,17 @@ v 0.9
    parseStateList moved into EvaluationMachine as a static method (Even though it isn't used outside of evaluate)
    isElementNameInUse merged into EvaluationMachine.EvaluateDeclarations as a lambda
    Moved stripDeclarations to EvaluationMachine as a static method
-   tryGetPartFromConfig merged into EvaluateGrid, attempted refactor to reduce redundancy. Results mixed.
-   Combined ActionPart.SetValueon and SetValueOff into the same method
+   tryGetPartFromConfig merged into EvaluateGrid, then put back into its own method within EvaluationMachine. 
+     Also attempted refactor to reduce redundancy. Results mixed, but at least character count has gone down.
+   Combined ActionPart.SetValueOn and SetValueOff into the same method
+   Brought over ActionPartString from .8022 and supporting code
+   getActionHandlersForMAPB merged into EvaluateGrid as a lambda
+   retrieveActionHandlers merged into EvaluateGrid as a lambda
  >Last Minify character count: 98066
- -Improved the terrible terrible hack that disabled string based terminal actions, and added a message
-  explaining what's happening.
  -Under the hood: Refactored Tally Generic handlers to reduce redundancy and character count.
- -Under the hood: Optimized Evaluation warning messages to reduce character count
- -Under the hood: Optimized true and false to reduce character count.
+ -Under the hood: Optimized Evaluation error and warning messages to reduce character count
 
- -!TODO! Implement .8022's fix for bad ActionSet config (20251113)
+ -!DONE - TEST! Implement .8022's fix for bad ActionSet config (20251113)
  -?TODO? Move most (All?) interactions with UpdateFrequency into the Distributor object
  -!TODO! Character squish. Might be able to make some ground in AutoPopulate, might be able to 
          find some more instances of common code in the Tally Handler implementation (Virtual methods
@@ -259,6 +251,11 @@ v 0.9
 		 probably implement some form of the old 'error shelf' idea, or find other savings. Also replacing
 		 all the Trues and Falses with references to globals
  -!TODO! Multi-tic Evaluate (20240304). Investigate Using statements within the sequencers (20250508)
+ -!TODO! Test. Extensively, and before I actually start adding in the yields and stuff. Especially:
+          >parseStateList error messages using the additionalInfo string.
+		  >EvaluateDeclarations second pass error messages, the ones that use unconfiguredSetLogger
+ -!TODO! Re-visit assignment of TallyGenericHandlers in the first pass of evaluateDeclarations (20260116)
+ -!TODO! Re-visit Raycaster Tally Max logic (20260121)
  -!TODO! Double check for orphaned code after the Evaluate transition
  -!TODO! TerminalValues (20240910). Possibly build into TerminalProperties as -values instead of 
 		 making a seperate command.
